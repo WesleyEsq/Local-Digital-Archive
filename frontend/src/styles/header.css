@@ -1,0 +1,33 @@
+/* --- Top Header --- */
+.top-header-bar {
+    background-color: var(--header-bg);
+    color: var(--text-light);
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    flex-shrink: 0;
+}
+
+.top-header-bar h2 {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.top-header-bar button {
+    background-color: var(--button-bg);
+    color: var(--text-light);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.top-header-bar button:hover {
+    background-color: #E04F75;
+    transform: translateY(-1px);
+}

@@ -1,0 +1,17 @@
+/* frontend/src/App.css */
+
+/* 1. Variables & Global Reset */
+@import './styles/variables.css';
+@import './styles/layout.css';
+
+/* 2. Global UI Components */
+@import './styles/header.css';
+@import './styles/forms.css';
+@import './styles/modals.css';
+@import './styles/markdown.css';
+
+/* 3. Page/Feature Specifics */
+@import './styles/table.css';
+@import './styles/library.css';
+@import './styles/series-detail.css';
+@import './styles/about.css';

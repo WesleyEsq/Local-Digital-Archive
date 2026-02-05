@@ -1,0 +1,20 @@
+:root {
+  /* --- The New Yuri Palette --- */
+  --header-bg: #800F2F;        /* Deep Ruby - Main App Header */
+  --ui-header: #C9184A;        /* Vivid Raspberry - Table/Section Headers */
+  --button-bg: #CF3460;        /* Rose Red - Interactive Buttons */
+  
+  --bg-color: #FFFFFF;         /* Pure White - App Background */
+  --text-color: #333333;       /* Dark Grey - Main Text */
+  --text-light: #FFFFFF;       /* White - Text on dark backgrounds */
+  
+  /* Table Row Alternating Colors */
+  --row-color-1: #FFF0F3;      /* Very light pink */
+  --row-color-2: #FFE5E9;      /* Lightened version of #ffccd5 */
+  
+  --border-color: #F8B7C9;     /* Soft pink for borders */
+  
+  /* Drag and Drop Visuals */
+  --dragging-bg: #FFE4E1;      /* Misty Rose */
+  --drag-border: 2px dashed var(--ui-header);
+}

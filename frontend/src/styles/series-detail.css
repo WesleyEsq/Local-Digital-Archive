@@ -1,0 +1,146 @@
+/* --- Series Detail Page --- */
+.series-detail-container {
+    flex-grow: 1;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    padding-bottom: 50px;
+}
+
+.series-hero {
+    position: relative;
+    background: linear-gradient(to bottom, var(--header-bg), #4a0518);
+    color: white;
+    padding: 40px 60px;
+    display: flex;
+    justify-content: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+.back-button-floating {
+    position: absolute;
+    top: 20px; left: 20px;
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: bold;
+    backdrop-filter: blur(5px);
+    transition: background 0.2s;
+}
+.back-button-floating:hover { background: rgba(255,255,255,0.4); }
+
+.hero-content {
+    display: flex;
+    gap: 40px;
+    max-width: 1200px;
+    width: 100%;
+}
+
+.hero-poster {
+    width: 240px; height: 360px;
+    object-fit: cover;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid white;
+    flex-shrink: 0;
+}
+
+.hero-info { flex-grow: 1; display: flex; flex-direction: column; }
+
+.hero-title {
+    margin: 0 0 15px 0;
+    font-size: 3em;
+    font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.hero-meta-row { display: flex; gap: 15px; margin-bottom: 25px; }
+
+.meta-pill {
+    background: rgba(255,255,255,0.2);
+    padding: 5px 15px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.9em;
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+.hero-description {
+    background: rgba(0,0,0,0.2);
+    padding: 20px;
+    border-radius: 8px;
+    line-height: 1.6;
+    font-size: 1.05em;
+    color: #f0f0f0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+/* Markdown overrides for Hero */
+.hero-description h1, .hero-description h2 { margin-top: 0; color: #ffd700; border: none; }
+.hero-description p { margin-bottom: 10px; }
+
+/* --- Collections Section --- */
+.content-separator {
+    max-width: 1000px; margin: 40px auto 20px auto;
+    display: flex; justify-content: space-between; align-items: center; padding: 0 20px;
+}
+.content-separator h2 { margin: 0; color: var(--text-color); border-bottom: 3px solid var(--ui-header); padding-bottom: 5px; }
+
+.add-collection-btn { background-color: var(--button-bg); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+
+.collections-grid {
+    max-width: 1000px; margin: 0 auto; padding: 0 20px;
+    display: flex; flex-direction: column; gap: 20px;
+}
+
+.collection-card {
+    background: white; border-radius: 8px; overflow: hidden;
+    border: 1px solid #eee; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: box-shadow 0.2s;
+}
+.collection-card.expanded { box-shadow: 0 5px 15px rgba(0,0,0,0.1); border-color: var(--border-color); }
+
+.collection-header {
+    padding: 15px 20px; background: #fdfdfd; display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+}
+.collection-header:hover { background: #f5f5f5; }
+
+.collection-title-wrapper { display: flex; align-items: center; gap: 15px; }
+.collection-icon { font-size: 1.5em; }
+.collection-header h3 { margin: 0; color: #333; }
+.collection-controls { display: flex; align-items: center; gap: 15px; }
+.item-count { color: #888; font-size: 0.9em; font-weight: 600; }
+.delete-collection-btn { background: none; border: none; color: #ccc; font-size: 1.5em; cursor: pointer; line-height: 1; }
+.delete-collection-btn:hover { color: var(--ui-header); }
+
+/* --- Tracklist Assets --- */
+.assets-container { background: white; border-top: 1px solid #eee; }
+
+.asset-track-row {
+    display: flex; align-items: center; padding: 12px 20px; border-bottom: 1px solid #f9f9f9; transition: background 0.1s;
+}
+.asset-track-row:hover { background-color: var(--row-color-1); }
+
+.track-index { color: #aaa; font-weight: bold; width: 30px; }
+.track-icon { font-size: 1.2em; margin-right: 20px; opacity: 0.7; }
+.track-info { flex-grow: 1; }
+.track-title { font-weight: 600; color: #333; }
+.track-filename { font-size: 0.8em; color: #999; }
+.track-actions { display: flex; gap: 10px; opacity: 0.5; transition: opacity 0.2s; }
+.asset-track-row:hover .track-actions { opacity: 1; }
+
+.track-action-btn { border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em; font-weight: bold; }
+.track-action-btn.download { background: #eee; color: #333; }
+.track-action-btn.download:hover { background: #ddd; }
+.track-action-btn.delete { background: none; color: #aaa; }
+.track-action-btn.delete:hover { color: var(--header-bg); }
+
+.asset-upload-row {
+    display: flex; align-items: center; padding: 15px 20px; cursor: pointer; color: var(--ui-header); font-weight: bold; background-color: #fcfcfc;
+}
+.asset-upload-row:hover { background-color: #fafafa; }
+.upload-icon {
+    width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--ui-header);
+    display: flex; align-items: center; justify-content: center; margin-right: 15px; font-size: 1.2em; line-height: 1;
+}

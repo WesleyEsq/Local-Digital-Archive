@@ -1,0 +1,60 @@
+/* --- About / Compendium Page --- */
+.about-container {
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    padding: 40px;
+    background-color: var(--bg-color);
+    overflow-y: auto;
+}
+
+.about-card {
+    display: flex;
+    flex-direction: row;
+    background-color: white;
+    width: 100%;
+    max-width: 900px;
+    height: fit-content;
+    box-shadow: 0 10px 30px rgba(128, 15, 47, 0.1);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.about-image-section {
+    flex: 0 0 350px;
+    background-color: var(--row-color-1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px;
+    border-right: 1px solid var(--border-color);
+}
+
+.about-cover-image {
+    width: 100%; height: auto; max-height: 500px; object-fit: contain;
+    border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); background-color: white;
+}
+
+.about-info-section { flex: 1; padding: 40px; display: flex; flex-direction: column; }
+
+.about-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.about-header h1 { margin: 0; color: var(--header-bg); font-size: 2.5em; font-weight: 800; }
+.about-header h3 { margin: 10px 0 0 0; color: var(--ui-header); font-size: 1.2em; font-weight: 600; }
+
+.edit-icon-btn {
+    background: none; border: 2px solid var(--border-color); color: var(--ui-header);
+    font-size: 1.2em; width: 40px; height: 40px; border-radius: 50%;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+}
+.edit-icon-btn:hover { background-color: var(--ui-header); color: white; border-color: var(--ui-header); }
+
+.about-description {
+    font-size: 1.1em; line-height: 1.8; color: #444; white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+    .about-card { flex-direction: column; }
+    .about-image-section { flex: none; padding: 20px; border-right: none; border-bottom: 1px solid var(--border-color); }
+    .about-cover-image { max-height: 300px; }
+}
