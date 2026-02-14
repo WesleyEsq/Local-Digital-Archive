@@ -2,35 +2,14 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/csv"
 	"fmt"
-	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
-
-// Data models (Shared with Database)
-type MangaEntry struct {
-	ID            int    `json:"id"`
-	Number        string `json:"number"`
-	Title         string `json:"title"`
-	Comment       string `json:"comment"`
-	Rank          string `json:"rank"`
-	Image         []byte `json:"image"`
-	Description   string `json:"description"`
-	Backup        []byte `json:"backup"`
-	BackupName    string `json:"backupName"`
-	TextAlignment string `json:"textAlignment"` // New Field
-}
-
-type CompendiumData struct {
-	Title       string `json:"title"`
-	Author      string `json:"author"`
-	Description string `json:"description"`
-	Image       []byte `json:"image"`
-}
 
 // App struct
 type App struct {
@@ -41,101 +20,239 @@ type App struct {
 // NewApp creates a new App application struct
 func NewApp(db *DB) *App {
 	return &App{
-		db: db, // The database is injected here!
+		db: db,
 	}
 }
 
 // Startup is called when the app starts.
-// app.go
-
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
-	database, err := InitDB("./compendium.db")
-	if err != nil {
-		log.Fatal("Failed to initialize database:", err)
-	}
-	a.db = database
-
-	// --- ADD THIS LINE ---
-	// Start the dedicated media server in the background
-	go StartMediaServer(a)
+	// Initialization happens in main.go now, so we just store context here.
 }
 
-// --- Controller Methods (Exposed to Wails) ---
+// ==========================================
+// 1. LIBRARIES (The New Top Level)
+// ==========================================
 
-// GetEntries returns the list, optionally filtered
-func (a *App) GetEntries(query string) ([]MangaEntry, error) {
-	return a.db.FetchEntryList(query)
+func (a *App) GetLibraries() ([]Library, error) {
+	// Let's assume you add a simple GetLibraries() to database.go
+	return a.db.GetLibraries()
 }
 
-// GetEntryImage returns the base64 string of the image for a specific entry
-// The frontend calls this only when needed (Lazy Load)
-func (a *App) GetEntryImage(id int) (string, error) {
-	bytes, err := a.db.FetchEntryImage(id)
-	if err != nil {
-		return "", err
-	}
-	if len(bytes) == 0 {
-		return "", nil // or return a default placeholder
-	}
-	return base64.StdEncoding.EncodeToString(bytes), nil
+func (a *App) CreateLibrary(name, libType string) error {
+	return a.db.CreateLibrary(name, libType)
 }
 
-// SaveEntry passes data to the DB
-func (a *App) SaveEntry(entry MangaEntry) error {
-	// Note: If you send Base64 strings from frontend, you might need to decode them here
-	// before passing []byte to DB. Assuming the struct binding handles basic conversion,
-	// but often Wails needs explicit Base64 decoding if the frontend sends a string.
-	// For now, assuming your existing logic worked with []byte mapping.
-	return a.db.SaveEntry(entry)
+// ==========================================
+// 2. ENTRIES (Replaces MangaEntry)
+// ==========================================
+
+// GetEntries now requires a LibraryID to fetch the correct items
+func (a *App) GetEntries(libraryID int) ([]Entry, error) {
+	return a.db.GetEntries(libraryID)
+}
+
+func (a *App) SaveEntry(entry Entry) error {
+	// For the prototype, default to Library 1 if it's missing
+	if entry.LibraryID == 0 {
+		entry.LibraryID = 1
+	}
+
+	if entry.ID == 0 {
+		// It's a brand new entry
+		return a.db.CreateEntry(entry)
+	}
+
+	// It's an existing entry being edited
+	return a.db.UpdateEntry(entry)
 }
 
 func (a *App) DeleteEntry(id int) error {
 	return a.db.DeleteEntry(id)
 }
 
-func (a *App) UpdateOrder(entries []MangaEntry) error {
-	return a.db.UpdateOrder(entries)
+func (a *App) UpdateOrder(entries []Entry) error {
+	return a.db.UpdateEntryOrder(entries)
 }
 
-func (a *App) GetCompendiumData() (CompendiumData, error) {
-	return a.db.FetchCompendiumData()
+// ==========================================
+// 3. GROUP SETS (Seasons, Volumes)
+// ==========================================
+
+func (a *App) GetGroupSets(entryID int) ([]GroupSet, error) {
+	return a.db.GetGroupSets(entryID)
 }
 
-func (a *App) UpdateCompendiumData(data CompendiumData) error {
-	return a.db.UpdateCompendium(data)
+func (a *App) CreateGroupSet(entryID int, title, category string) error {
+	_, err := a.db.AddGroupSet(entryID, title, category, 0)
+	return err
 }
 
-// DownloadBackup retrieves the file blob and prompts user to save
-func (a *App) DownloadBackup(id int) (string, error) {
-	data, name, err := a.db.FetchEntryBackup(id)
-	if err != nil {
-		return "", fmt.Errorf("db error: %w", err)
-	}
-	if len(data) == 0 {
-		return "No backup file found.", nil
-	}
+// ==========================================
+// 4. FILES & OBJECTS (The Heavy Ingestion)
+// ==========================================
 
-	savePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		DefaultFilename: name,
-		Title:           "Save Backup File",
+// ImportFile opens a native OS dialog, reads the file, and stuffs it into SQLite
+func (a *App) ImportFile(groupsetID int) error {
+	// 1. Open File Dialog via Wails
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Media File to Archive",
 	})
-	if err != nil || savePath == "" {
-		return "Download cancelled.", nil
+	if err != nil || selection == "" {
+		return nil // User cancelled
 	}
 
-	if err := os.WriteFile(savePath, data, 0666); err != nil {
-		return "", fmt.Errorf("save error: %w", err)
+	// 2. Read the massive file into memory
+	data, err := os.ReadFile(selection)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	return fmt.Sprintf("Saved to %s", savePath), nil
+	// 3. Extract Metadata
+	filename := filepath.Base(selection)
+	sizeBytes := int64(len(data))
+
+	// Detect MimeType
+	mimeType := http.DetectContentType(data)
+	// http.DetectContentType sometimes falls back to application/octet-stream for mp4/mkv.
+	// You might want to add a switch statement here based on filepath.Ext(selection) for better accuracy.
+
+	// 4. Execute the 1:1 Transaction we wrote in media.go
+	_, err = a.db.AddFile(groupsetID, filename, mimeType, sizeBytes, data, 0)
+	if err != nil {
+		return fmt.Errorf("database insertion failed: %w", err)
+	}
+
+	return nil
 }
 
-// ImportLegacyCSV handles the file dialog (Controller) and data parsing
-func (a *App) ImportLegacyCSV() (string, error) {
+// SetCoverImage is a special helper to attach a cover to an Entry
+func (a *App) SetCoverImage(entryID int) error {
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Cover Art",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Images", Pattern: "*.jpg;*.jpeg;*.png;*.webp"},
+		},
+	})
+	if err != nil || selection == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(selection)
+	if err != nil {
+		return err
+	}
+
+	// 1. Create a hidden GroupSet just for Cover Art
+	groupID, err := a.db.AddGroupSet(entryID, "Cover Art", "Cover Art", 0)
+	if err != nil {
+		return err
+	}
+
+	// 2. Insert the image blob
+	mimeType := http.DetectContentType(data)
+	_, err = a.db.AddFile(groupID, filepath.Base(selection), mimeType, int64(len(data)), data, 0)
+	return err
+}
+
+// ==========================================
+// 5. TAGS (Unchanged Frontend API)
+// ==========================================
+
+func (a *App) GetAllTags() ([]Tag, error) {
+	return a.db.GetAllTags()
+}
+
+func (a *App) GetTagsForEntry(entryID int) ([]Tag, error) {
+	return a.db.GetTagsForEntry(entryID)
+}
+
+func (a *App) UpdateEntryTags(entryID int, tagIDs []int) error {
+	return a.db.UpdateEntryTags(entryID, tagIDs)
+}
+
+func (a *App) CreateTag(name, description, icon string) error {
+	return a.db.CreateTag(name, description, icon)
+}
+
+func (a *App) UpdateTag(id int, name, description, icon string) error {
+	return a.db.UpdateTag(id, name, description, icon)
+}
+
+func (a *App) DeleteTag(id int) error {
+	return a.db.DeleteTag(id)
+}
+
+// ==========================================
+// 6. MEDIA SERVER (New Dedicated Endpoint for Streaming)
+// ==========================================
+
+func (a *App) GetFiles(groupsetID int) ([]File, error) {
+	return a.db.GetFiles(groupsetID)
+}
+
+func (a *App) DeleteGroupSet(id int) error {
+	return a.db.DeleteGroupSet(id)
+}
+
+func (a *App) DeleteFile(id int) error {
+	return a.db.DeleteFile(id)
+}
+
+func (a *App) UpdateFileOrder(files []File) error {
+	return a.db.UpdateFileOrder(files)
+}
+
+// Ensure ExportMediaAsset uses the new FetchFileBlob:
+func (a *App) ExportMediaAsset(fileID int, filename string) error {
+	data, _, err := a.db.FetchFileBlob(fileID)
+	if err != nil {
+		return err
+	}
+
+	selection, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title: "Save File", DefaultFilename: filename,
+	})
+	if err != nil || selection == "" {
+		return nil
+	}
+
+	return os.WriteFile(selection, data, 0644)
+}
+
+func (a *App) GetLibrary(id int) (*Library, error) {
+	return a.db.GetLibrary(id)
+}
+
+func (a *App) UpdateLibrary(lib Library) error {
+	return a.db.UpdateLibrary(lib)
+}
+
+// SetLibraryCover opens the OS dialog specifically for the Library profile picture
+func (a *App) SetLibraryCover(libraryID int) error {
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:   "Select Library Cover Art",
+		Filters: []runtime.FileFilter{{DisplayName: "Images", Pattern: "*.jpg;*.jpeg;*.png;*.webp"}},
+	})
+	if err != nil || selection == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(selection)
+	if err != nil {
+		return err
+	}
+
+	return a.db.UpdateLibraryCover(libraryID, data)
+}
+
+// ==========================================
+// 7. LEGACY CSV IMPORT/EXPORT (For Mass Entry Management)
+// ==========================================
+func (a *App) ImportLegacyCSV(libraryID int) (string, error) {
 	filePath, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title:   "Select Legacy CSV",
-		Filters: []runtime.FileFilter{{DisplayName: "CSV", Pattern: "*.csv"}},
+		Filters: []runtime.FileFilter{{DisplayName: "CSV Text", Pattern: "*.csv;*.txt"}},
 	})
 	if err != nil || filePath == "" {
 		return "Cancelled", nil
@@ -148,138 +265,77 @@ func (a *App) ImportLegacyCSV() (string, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	reader.Comma = '|'
+	reader.Comma = '|' // The classic pipe separator!
 	reader.LazyQuotes = true
 	records, err := reader.ReadAll()
 	if err != nil {
 		return "", err
 	}
 
-	// We can do a quick loop here or move batch insert to DB
-	// For simplicity, let's just loop the Save logic or a batch insert
-	// But since we separated concerns, let's keep it simple:
 	count := 0
 	for i, record := range records {
+		// Skip header row or any malformed rows with missing columns
 		if i == 0 || len(record) < 4 {
 			continue
 		}
-		// Construct entry and save
-		e := MangaEntry{
-			Number:  record[0],
-			Title:   record[1],
-			Comment: record[2],
-			Rank:    record[3],
+
+		entry := Entry{
+			LibraryID:     libraryID,
+			Number:        record[0],
+			Title:         record[1],
+			Comment:       record[2],
+			Rank:          record[3],
+			TextAlignment: "justify", // Default formatting
 		}
-		if err := a.db.SaveEntry(e); err == nil {
+
+		if err := a.db.CreateEntry(entry); err == nil {
 			count++
 		}
 	}
-	return fmt.Sprintf("Imported %d entries.", count), nil
+	return fmt.Sprintf("Successfully imported %d entries.", count), nil
 }
 
-// --- Media Library Methods ---
-
-// GetMediaGroups returns all seasons/volumes for a specific entry
-func (a *App) GetMediaGroups(entryID int) ([]MediaGroup, error) {
-	return a.db.FetchGroupsForEntry(entryID)
-}
-
-// GetMediaAssets returns all chapters/episodes for a specific group
-func (a *App) GetMediaAssets(groupID int) ([]MediaAsset, error) {
-	return a.db.FetchAssetsForGroup(groupID)
-}
-
-// GetAllLibraryAssets returns EVERYTHING (for your "All Files" view)
-func (a *App) GetAllLibraryAssets() ([]MediaAsset, error) {
-	return a.db.FetchAllAssets()
-}
-
-// SaveMediaGroup creates/updates a container (Volume/Season)
-func (a *App) SaveMediaGroup(group MediaGroup) error {
-	return a.db.SaveMediaGroup(group)
-}
-
-// SaveMediaAsset saves a file to the DB.
-// NOTE: For now, we accept the Base64 string from frontend and decode it here.
-// In the future "Phase 3", we will stream this differently.
-func (a *App) SaveMediaAsset(asset MediaAsset, base64Data string) error {
-	// Decode base64 to bytes
-	data, err := base64.StdEncoding.DecodeString(base64Data)
+// ExportLibraryCSV generates a pipe-separated backup of your entire library list
+func (a *App) ExportLibraryCSV(libraryID int) (string, error) {
+	// 1. Fetch all lightweight text entries
+	entries, err := a.db.GetEntries(libraryID)
 	if err != nil {
-		// If empty string passed (metadata update only), data will be empty, which is fine
-		if base64Data == "" {
-			data = []byte{}
-		} else {
-			return fmt.Errorf("base64 decode error: %w", err)
-		}
-	}
-	return a.db.SaveMediaAsset(asset, data)
-}
-
-func (a *App) DeleteMediaGroup(id int) error {
-	return a.db.DeleteMediaGroup(id)
-}
-
-func (a *App) DeleteMediaAsset(id int) error {
-	return a.db.DeleteMediaAsset(id)
-}
-
-// ExportMediaAsset opens a save dialog and writes the file to disk
-func (a *App) ExportMediaAsset(assetID int, filename string) error {
-	// 1. Fetch data
-	data, _, err := a.db.FetchAssetBlob(assetID)
-	if err != nil {
-		return fmt.Errorf("fetch error: %w", err)
+		return "", err
 	}
 
 	// 2. Open Save Dialog
-	selection, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Save File",
-		DefaultFilename: filename,
+	savePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Save Library Backup (CSV)",
+		DefaultFilename: "compendium_backup.csv",
+		Filters:         []runtime.FileFilter{{DisplayName: "CSV", Pattern: "*.csv"}},
 	})
-
-	// User cancelled
-	if err != nil || selection == "" {
-		return nil
+	if err != nil || savePath == "" {
+		return "Cancelled", nil
 	}
 
-	// 3. Write File
-	return os.WriteFile(selection, data, 0644)
-}
+	// 3. Create the file
+	file, err := os.Create(savePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
 
-// UpdateAssetOrder updates the sort order of a list of assets
-func (a *App) UpdateAssetOrder(assets []MediaAsset) error {
-	return a.db.UpdateAssetOrder(assets)
-}
+	// 4. Write data with pipe separator
+	writer := csv.NewWriter(file)
+	writer.Comma = '|'
 
-func (a *App) CreateTag(name, description, icon string) error {
-	return a.db.CreateTag(name, description, icon)
-}
+	// Write Header
+	writer.Write([]string{"Number", "Title", "Comment", "Rank"})
 
-func (a *App) GetAllTags() ([]Tag, error) {
-	return a.db.GetAllTags()
-}
+	// Write Data Rows
+	for _, e := range entries {
+		writer.Write([]string{e.Number, e.Title, e.Comment, e.Rank})
+	}
 
-func (a *App) GetTagsForEntry(entryID int) ([]Tag, error) {
-	return a.db.GetTagsForEntry(entryID)
-}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
 
-func (a *App) AddTagToEntry(entryID, tagID int) error {
-	return a.db.AddTagToEntry(entryID, tagID)
-}
-
-func (a *App) RemoveTagFromEntry(entryID, tagID int) error {
-	return a.db.RemoveTagFromEntry(entryID, tagID)
-}
-
-func (a *App) DeleteTag(tagID int) error {
-	return a.db.DeleteTag(tagID)
-}
-
-func (a *App) UpdateTag(id int, name, description, icon string) error {
-	return a.db.UpdateTag(id, name, description, icon)
-}
-
-func (a *App) UpdateEntryTags(entryID int, tagIDs []int) error {
-	return a.db.UpdateEntryTags(entryID, tagIDs)
+	return fmt.Sprintf("Backup successfully saved to %s", savePath), nil
 }

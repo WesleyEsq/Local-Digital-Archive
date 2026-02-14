@@ -1,64 +1,73 @@
 import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import ReactMarkdown from 'react-markdown';
-import { DownloadBackup, ImportLegacyCSV } from '../../wailsjs/go/main/App';
-import { useEntryList } from '../hooks/useEntryList'; // <--- The new Hook
-import TagSelectorModal from './TagSelectorModal';   // <--- The Modal we made
-import { renderIcon } from '../utils/iconMap';       // <--- Icon helper
+import { ExportLibraryCSV, ImportLegacyCSV, SetCoverImage } from '../../wailsjs/go/main/App';
+import { useEntryList } from '../hooks/useEntryList'; 
+import TagSelectorModal from './TagSelectorModal';   
+import { renderIcon } from '../utils/iconMap';       
 
 // Icons
 import { Plus, Search, FileDown, Upload, GripVertical, Pencil, Trash2, X, Check } from 'lucide-react';
 
-export default function EntryList({ isAddingNew, onAddComplete, refreshTrigger, onAddNew }) {
-    // 1. Initialize Controller
+export default function EntryList({ libraryId, isAddingNew, onAddComplete, refreshTrigger, onAddNew }) {
     const {
         entries, editingId, editForm, expandedRowId, searchQuery, 
-        entryTags, tagModalTarget, BLANK_IMAGE_BASE64,
+        entryTags, tagModalTarget,
         setSearchQuery, setTagModalTarget,
         refreshEntries, handleSearchKeyDown, startEditing, cancelEditing, saveEdit, 
         handleDelete, handleDragEnd, handleRowClick, refreshTags,
-        handleChange, handleAlignment, handleImageFile, handleBackupFile
+        handleChange, handleAlignment
     } = useEntryList(isAddingNew, onAddComplete, refreshTrigger);
 
-    // --- RENDER HELPERS ---
+    // --- NATIVE OS UPLOAD HANDLER ---
+    const handleUpdateCover = async (e, entryId) => {
+        e.preventDefault();
+        if (entryId === 'NEW' || !entryId) {
+            return alert("Please save the text metadata first before uploading a cover.");
+        }
+        try {
+            await SetCoverImage(entryId);
+            refreshEntries(); // Force image cache refresh
+        } catch (err) {
+            console.error("Cover upload failed:", err);
+        }
+    };
 
-    // 1. Tiny Tag Display (Visible in Expanded Row)
+    // 1. Tiny Tag Display (Renders inside the expanded view as requested)
     const renderTagList = (entryId) => {
         const tags = entryTags[entryId] || [];
+        if (tags.length === 0) return (
+            <div className="tag-row-display" style={{ marginBottom: '15px' }}>
+                <button className="add-tag-tiny-btn" onClick={(e) => { e.stopPropagation(); setTagModalTarget(entryId); }}>+ Tag</button>
+            </div>
+        );
+
         const displayLimit = 5;
         const visibleTags = tags.slice(0, displayLimit);
         const remaining = tags.length - displayLimit;
 
         return (
-            <div className="tag-row-display">
+            <div className="tag-row-display" style={{ marginBottom: '15px' }}>
                 {visibleTags.map(tag => (
                     <span key={tag.id} className="mini-tag-pill" title={tag.description}>
                         {renderIcon(tag.icon, { size: 12, style: {marginRight: 4} })}
                         {tag.name}
                     </span>
                 ))}
-                
-                {remaining > 0 && (
-                    <span className="mini-tag-pill more">+{remaining} more</span>
-                )}
-
-                <button 
-                    className="add-tag-tiny-btn" 
-                    onClick={(e) => { e.stopPropagation(); setTagModalTarget(entryId); }}
-                >
-                    + Tag
-                </button>
+                {remaining > 0 && <span className="mini-tag-pill more">+{remaining}</span>}
+                <button className="add-tag-tiny-btn" onClick={(e) => { e.stopPropagation(); setTagModalTarget(entryId); }}>+ Tag</button>
             </div>
         );
     };
 
-    // 2. Edit Mode Row Inputs
+    // 2. Edit Mode Row Inputs (Matches the 6-column layout)
     const renderEditInputs = () => (
         <>
-            <td><input name="number" className="inline-input" value={editForm.number} onChange={handleChange} style={{width: '50px'}}/></td>
-            <td><input name="title" className="inline-input" value={editForm.title} onChange={handleChange} autoFocus /></td>
-            <td><input name="comment" className="inline-input" value={editForm.comment} onChange={handleChange} /></td>
-            <td><input name="rank" className="inline-input" value={editForm.rank} onChange={handleChange} style={{width: '60px'}}/></td>
+            <td><input name="number" className="inline-input" value={editForm.number || ''} onChange={handleChange} style={{width: '50px'}}/></td>
+            <td><input name="title" className="inline-input" value={editForm.title || ''} onChange={handleChange} autoFocus placeholder="Title" /></td>
+            <td><input name="comment" className="inline-input" value={editForm.comment || ''} onChange={handleChange} placeholder="Comment" /></td>
+            <td><input name="rank" className="inline-input" value={editForm.rank || ''} onChange={handleChange} style={{width: '60px'}}/></td>
+           
             <td className="actions-cell">
                 <button className="icon-action-btn save" onClick={(e) => { e.stopPropagation(); saveEdit(); }} title="Save">
                     <Check size={18} />
@@ -70,13 +79,13 @@ export default function EntryList({ isAddingNew, onAddComplete, refreshTrigger, 
         </>
     );
 
-    // 3. View Mode Row Text
+    // 3. View Mode Row Text (Cleaned up: Alignment removed!)
     const renderViewText = (entry) => (
         <>
-            <td className="rank-col">{entry.number}</td>
-            <td className="title-col">{entry.title}</td>
-            <td className="comment-col">{entry.comment}</td>
-            <td className="rank-text">{entry.rank}</td>
+            <td className="rank-col" style={{textAlign: 'center'}}>{entry.number}</td>
+            <td className="title-col" style={{ color: '#333', fontWeight: 'bold' }}>{entry.title}</td>
+            <td className="comment-col" style={{ color: '#555', fontSize: '0.9em', maxWidth: '300px' }}>{entry.comment}</td>
+            <td className="rank-text" style={{textAlign: 'center'}}>{entry.rank}</td>
             <td className="actions-cell">
                 <button className="icon-action-btn edit" onClick={(e) => { e.stopPropagation(); startEditing(entry); }} title="Edit">
                     <Pencil size={18} />
@@ -92,39 +101,40 @@ export default function EntryList({ isAddingNew, onAddComplete, refreshTrigger, 
     const renderEditDetailsPanel = () => (
         <div className="details-panel edit-mode">
             <div className="edit-image-section">
-                <img src={`data:image/jpeg;base64,${editForm.image || BLANK_IMAGE_BASE64}`} className="details-image" alt="Cover" />
-                <label className="file-upload-btn">
-                    Change Cover
-                    <input type="file" accept="image/*" onChange={handleImageFile} hidden />
-                </label>
+                <img 
+                    src={`/images/${editForm.id}?t=${Date.now()}`} 
+                    className="details-image" 
+                    alt="Cover" 
+                    onError={(e) => { e.target.src = '/default-cover.png'; }}
+                />
+                <button className="file-upload-btn" onClick={(e) => handleUpdateCover(e, editForm.id)}>
+                    Change Cover (OS)
+                </button>
             </div>
             <div className="edit-text-section">
+                
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'}}>
                     <label style={{fontWeight:'bold', color:'var(--ui-header)'}}>Description (Markdown)</label>
                     <div className="alignment-controls">
                         {['left', 'center', 'right', 'justify'].map(align => (
-                            <button key={align} className={`align-btn ${editForm.textAlignment === align ? 'active' : ''}`} onClick={() => handleAlignment(align)}>
+                            <button key={align} className={`align-btn ${editForm.textAlignment === align ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); handleAlignment(align); }}>
                                 {align === 'justify' ? '≡' : align === 'left' ? '⇤' : align === 'right' ? '⇥' : '↔'}
                             </button>
                         ))}
                     </div>
                 </div>
-                <textarea name="description" value={editForm.description} onChange={handleChange} rows="8" placeholder="Markdown supported..." style={{fontFamily: 'monospace'}}/>
-                <div className="edit-backup-section">
-                    <label style={{fontWeight:'bold', color:'var(--ui-header)'}}>Backup File: </label>
-                    <span className="file-name">{editForm.backupName || "None"}</span>
-                    <label className="file-upload-btn small">
-                        Upload File
-                        <input type="file" onChange={handleBackupFile} hidden />
-                    </label>
-                </div>
+
+                <textarea name="description" value={editForm.description || ''} onChange={handleChange} rows="8" placeholder="Markdown supported..." style={{fontFamily: 'monospace'}}/>
+                
             </div>
         </div>
     );
 
     return (
         <div className="main-content">
-            <div className="entry-card">
+            <div className="entry-card" style={{ width: '100%' }}>
+                
+                {/* ACTION BAR */}
                 <div className="list-action-bar">
                     <button className="action-rect-btn" onClick={onAddNew}>
                         <Plus size={18} />
@@ -145,28 +155,35 @@ export default function EntryList({ isAddingNew, onAddComplete, refreshTrigger, 
                     </div>
                 </div>
 
+                {/* TABLE */}
                 {(entries.length > 0 || isAddingNew) ? (
                     <DragDropContext onDragEnd={handleDragEnd}>
                         <table className="compendium-table">
                             <thead>
                                 <tr>
                                     <th style={{width: '40px'}}></th>
-                                    <th style={{width: '60px'}}>#</th>
-                                    <th>Title</th>
-                                    <th>Comment</th>
-                                    <th style={{width: '80px'}}>Rank</th>
-                                    <th style={{width: '100px', textAlign: 'right'}}>Actions</th>
+                                    <th style={{width: '60px', textAlign: 'center'}}>#</th>
+                                    <th>Title & Tags</th>
+                                    <th style={{textAlign: 'center'}}>Comment</th>
+                                    <th style={{width: '80px', textAlign: 'center'}}>Rank</th>
+                                    {/* ALIGNMENT COLUMN REMOVED */}
+                                    <th style={{width: '100px', textAlign: 'center'}}>Actions</th>
                                 </tr>
                             </thead>
                             <Droppable droppableId="entries">
                                 {(provided) => (
                                     <tbody {...provided.droppableProps} ref={provided.innerRef}>
+                                        
+                                        {/* ADD NEW ROW */}
                                         {isAddingNew && editingId === 'NEW' && (
                                             <>
-                                                <tr className="editing-row"><td className="drag-handle-cell">✨</td>{renderEditInputs()}</tr>
+                                                <tr className="editing-row"><td className="drag-handle-cell"><GripVertical size={16} /></td>{renderEditInputs()}</tr>
+                                                {/* colSpan updated to 6 */}
                                                 <tr className="details-row editing-details"><td colSpan="6">{renderEditDetailsPanel()}</td></tr>
                                             </>
                                         )}
+
+                                        {/* LIST ROWS */}
                                         {entries.map((entry, index) => (
                                             <React.Fragment key={entry.id}>
                                                 <Draggable draggableId={String(entry.id)} index={index} isDragDisabled={!!editingId || searchQuery !== ""}>
@@ -174,39 +191,43 @@ export default function EntryList({ isAddingNew, onAddComplete, refreshTrigger, 
                                                         <tr ref={provided.innerRef} {...provided.draggableProps} className={`${snapshot.isDragging ? 'dragging-row' : ''} ${editingId === entry.id ? 'editing-row' : ''}`} onClick={() => handleRowClick(entry.id)}>
                                                             <td className="drag-handle-cell" {...provided.dragHandleProps}>
                                                                 {editingId !== entry.id && searchQuery === "" && (
-                                                                    <div className="grip-icon"><GripVertical size={20} /></div>
+                                                                    <div className="grip-icon"><GripVertical size={16} /></div>
                                                                 )}
                                                             </td>
                                                             {editingId === entry.id ? renderEditInputs() : renderViewText(entry)}
                                                         </tr>
                                                     )}
                                                 </Draggable>
+
+                                                {/* EXPANDED DETAILS ROW (Edit Mode for existing items) */}
+                                                {editingId === entry.id && entry.id !== 'NEW' && (
+                                                    <tr className="details-row editing-details">
+                                                        {/* colSpan updated to 6 */}
+                                                        <td colSpan="6">{renderEditDetailsPanel()}</td>
+                                                    </tr>
+                                                )}
                                                 
-                                                {/* EXPANDED DETAILS ROW */}
-                                                {expandedRowId === entry.id && (
-                                                    <tr className="details-row">
+                                                {/* EXPANDED DETAILS ROW (View Mode) */}
+                                                {expandedRowId === entry.id && !editingId && (
+                                                    <tr className="expanded-details-row">
+                                                        {/* colSpan updated to 6 */}
                                                         <td colSpan="6">
-                                                            {editingId === entry.id ? renderEditDetailsPanel() : (
-                                                                <div className="details-panel">
-                                                                    <img src={`data:image/jpeg;base64,${entry.image || BLANK_IMAGE_BASE64}`} className="details-image" alt="Cover" />
+                                                            <div className="details-panel">
+                                                                <img 
+                                                                    src={`/images/${entry.id}`} 
+                                                                    className="details-image" 
+                                                                    alt="Cover"
+                                                                    onError={(e) => { e.target.src = '/default-cover.png'; e.target.style.opacity = '0.5'; }}
+                                                                />
+                                                                <div className="details-text">
+                                                                    {renderTagList(entry.id)}
                                                                     
-                                                                    <div className="details-text">
-                                                                        {/* --- TAG DISPLAY --- */}
-                                                                        {renderTagList(entry.id)}
-                                                                        
-                                                                        <div className="markdown-content" style={{ textAlign: entry.textAlignment || 'center', marginTop: '15px' }}>
-                                                                            <ReactMarkdown>{entry.description || "No description."}</ReactMarkdown>
-                                                                        </div>
-                                                                        
-                                                                        {entry.backupName && (
-                                                                            <button className="download-button" onClick={() => DownloadBackup(entry.id)}>
-                                                                                <FileDown size={16} style={{marginRight: '5px'}}/> 
-                                                                                Download {entry.backupName}
-                                                                            </button>
-                                                                        )}
+                                                                    <h4 style={{ color: 'var(--ui-header)', marginTop: '5px' }}>Description</h4>
+                                                                    <div className="markdown-content" style={{ textAlign: entry.textAlignment || 'justify' }}>
+                                                                        <ReactMarkdown>{entry.description || "*No description provided.*"}</ReactMarkdown>
                                                                     </div>
                                                                 </div>
-                                                            )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 )}
@@ -222,15 +243,31 @@ export default function EntryList({ isAddingNew, onAddComplete, refreshTrigger, 
                     <div className="empty-db-prompt">
                         {searchQuery ? <h3>No matches found.</h3> : <h3>Compendium is empty.</h3>}
                         {!searchQuery && (
-                            <button className="import-button" onClick={ImportLegacyCSV}>
-                                <Upload size={18} style={{marginRight: '8px'}} /> Import CSV
-                            </button>
+                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                                <button 
+                                    className="import-button" 
+                                    onClick={() => {
+                                        ImportLegacyCSV(libraryId).then(msg => {
+                                            if (msg !== "Cancelled") refreshEntries();
+                                        });
+                                    }}
+                                >
+                                    <Upload size={18} style={{marginRight: '8px'}} /> Import CSV
+                                </button>
+
+                                <button 
+                                    className="import-button" 
+                                    style={{ background: 'transparent', color: 'var(--ui-header)', border: '2px solid var(--ui-header)' }}
+                                    onClick={() => ExportLibraryCSV(libraryId).then(msg => { if(msg !== "Cancelled") alert(msg); })}
+                                >
+                                    <FileDown size={18} style={{marginRight: '8px'}} /> Export CSV Backup
+                                </button>
+                            </div>
                         )}
                     </div>
                 )}
             </div>
 
-            {/* --- TAG SELECTOR MODAL --- */}
             {tagModalTarget && (
                 <TagSelectorModal 
                     entryId={tagModalTarget}

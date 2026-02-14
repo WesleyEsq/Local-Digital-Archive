@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { 
-    GetEntries, UpdateOrder, DeleteEntry, SaveEntry, GetEntryImage, 
-    GetTagsForEntry // <--- NEW IMPORT
+    GetEntries, UpdateOrder, DeleteEntry, SaveEntry, 
+    GetTagsForEntry 
 } from '../../wailsjs/go/main/App';
-
-const BLANK_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 export function useEntryList(isAddingNew, onAddComplete, refreshTrigger) {
     // --- STATE ---
@@ -18,9 +16,9 @@ export function useEntryList(isAddingNew, onAddComplete, refreshTrigger) {
     // View Mode State
     const [expandedRowId, setExpandedRowId] = useState(null);
     
-    // --- NEW: Tag State ---
-    const [entryTags, setEntryTags] = useState({}); // { [id]: [tags...] }
-    const [tagModalTarget, setTagModalTarget] = useState(null); // ID of entry being edited
+    // Tag State
+    const [entryTags, setEntryTags] = useState({}); 
+    const [tagModalTarget, setTagModalTarget] = useState(null);
 
     // --- EFFECTS ---
     useEffect(() => { refreshEntries(); }, [refreshTrigger]);
@@ -29,81 +27,58 @@ export function useEntryList(isAddingNew, onAddComplete, refreshTrigger) {
         if (isAddingNew) {
             const nextNum = entries.length > 0 ? String(entries.length + 1) : "1";
             startEditing({ 
-                id: 'NEW', number: nextNum, title: '', comment: '', rank: '', 
-                description: '', image: BLANK_IMAGE_BASE64, textAlignment: 'center' 
+                id: 'NEW', number: nextNum, title: '', comment: '', rank: '', description: '',
             });
         }
-    }, [isAddingNew]);
+    }, [isAddingNew, entries.length]);
 
-    // --- CORE ACTIONS ---
+    // --- ACTIONS ---
     const refreshEntries = () => {
-        GetEntries(searchQuery).then(res => setEntries(res || [])).catch(console.error);
+        // NOTE: For the prototype, we assume Library ID 1. 
+        // Later, we'll pass the active libraryId from App.jsx
+        GetEntries(1).then(res => setEntries(res || [])).catch(console.error);
     };
 
-    const handleSearchKeyDown = (e) => { if (e.key === 'Enter') refreshEntries(); };
+    const handleSearchKeyDown = (e, localSearch) => {
+        if (e.key === 'Enter') setSearchQuery(localSearch);
+    };
 
-    // --- EDITING HANDLERS ---
-    const startEditing = async (entry) => {
-        let fullEntry = { ...entry };
-        if (entry.id !== 'NEW' && (!entry.image || entry.image === BLANK_IMAGE_BASE64)) {
-            const img = await GetEntryImage(entry.id);
-            if (img) fullEntry.image = img;
-        }
-        if (!fullEntry.textAlignment) fullEntry.textAlignment = 'center';
-
+    const startEditing = (entry) => {
         setEditingId(entry.id);
-        setEditForm(fullEntry);
-        setExpandedRowId(entry.id);
+        // Note: No more Base64 image payload in the edit form!
+        setEditForm({ ...entry });
+        setExpandedRowId(null); 
     };
 
     const cancelEditing = () => {
-        setEditingId(null); setEditForm({});
-        if (isAddingNew) onAddComplete();
+        setEditingId(null);
+        if (isAddingNew && onAddComplete) onAddComplete();
     };
 
     const saveEdit = () => {
-        const payload = { ...editForm, id: editForm.id === 'NEW' ? 0 : editForm.id };
-        SaveEntry(payload).then(() => {
-            refreshEntries(); setEditingId(null);
-            if (isAddingNew) onAddComplete();
-        }).catch(err => alert(err));
+        // Backend now handles images separately. We just save the text data.
+        SaveEntry(editForm).then(() => {
+            setEditingId(null);
+            if (isAddingNew && onAddComplete) onAddComplete();
+            refreshEntries();
+        }).catch(err => alert("Failed to save: " + err));
     };
 
-    const handleDelete = (id) => { 
-        if (window.confirm("Delete this entry?")) DeleteEntry(id).then(refreshEntries); 
+    const handleDelete = (id) => {
+        if (confirm("Delete this entry?")) {
+            DeleteEntry(id).then(refreshEntries).catch(err => alert("Error: " + err));
+        }
     };
 
-    // --- FORM FIELD HANDLERS ---
-    const handleChange = (e) => setEditForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    const handleAlignment = (align) => setEditForm(prev => ({ ...prev, textAlignment: align }));
-    
-    const handleImageFile = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => setEditForm(prev => ({ ...prev, image: ev.target.result.split(',')[1] }));
-        reader.readAsDataURL(file);
-    };
-
-    const handleBackupFile = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => setEditForm(prev => ({ 
-            ...prev, backup: ev.target.result.split(',')[1], backupName: file.name 
-        }));
-        reader.readAsDataURL(file);
-    };
-
-    // --- INTERACTION HANDLERS ---
     const handleDragEnd = (result) => {
-        if (!result.destination || editingId || searchQuery !== "") return;
-        const items = Array.from(entries);
-        const [reorderedItem] = items.splice(result.source.index, 1);
-        items.splice(result.destination.index, 0, reorderedItem);
-        const updated = items.map((item, idx) => ({ ...item, number: String(idx + 1) }));
+        if (!result.destination) return;
+        const reordered = Array.from(entries);
+        const [moved] = reordered.splice(result.source.index, 1);
+        reordered.splice(result.destination.index, 0, moved);
+
+        const updated = reordered.map((e, index) => ({ ...e, number: String(index + 1) }));
         setEntries(updated);
-        UpdateOrder(updated).catch(alert);
+        UpdateOrder(updated).catch(() => refreshEntries());
     };
 
     const handleRowClick = async (id) => {
@@ -112,41 +87,28 @@ export function useEntryList(isAddingNew, onAddComplete, refreshTrigger) {
         setExpandedRowId(isExpanding ? id : null);
         
         if (isExpanding) {
-            const entry = entries.find(e => e.id === id);
-            
-            // 1. Load Image
-            if (entry && (!entry.image || entry.image === BLANK_IMAGE_BASE64)) {
-                const img = await GetEntryImage(id);
-                if (img) setEntries(prev => prev.map(e => e.id === id ? { ...e, image: img } : e));
-            }
-
-            // 2. Load Tags (NEW)
+            // We ONLY fetch tags now. The image is handled automatically by the browser!
             GetTagsForEntry(id).then(tags => {
                 setEntryTags(prev => ({ ...prev, [id]: tags || [] }));
             });
         }
     };
 
-    // --- TAG SPECIFIC HELPERS ---
     const refreshTags = (entryId) => {
         GetTagsForEntry(entryId).then(tags => {
             setEntryTags(prev => ({ ...prev, [entryId]: tags || [] }));
         });
     };
 
+    const handleChange = (e) => setEditForm({ ...editForm, [e.target.name]: e.target.value });
+    const handleAlignment = (alignment) => setEditForm({ ...editForm, textAlignment: alignment });
+
     return {
-        // State
         entries, editingId, editForm, expandedRowId, searchQuery, 
-        entryTags, tagModalTarget, BLANK_IMAGE_BASE64,
-        
-        // Setters (for search input)
+        entryTags, tagModalTarget,
         setSearchQuery, setTagModalTarget,
-        
-        // Actions
         refreshEntries, handleSearchKeyDown, startEditing, cancelEditing, saveEdit, 
         handleDelete, handleDragEnd, handleRowClick, refreshTags,
-        
-        // Form Handlers
-        handleChange, handleAlignment, handleImageFile, handleBackupFile
+        handleChange, handleAlignment
     };
 }

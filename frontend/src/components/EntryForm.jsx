@@ -1,67 +1,91 @@
 import React, { useState, useEffect } from 'react';
-import { SaveEntry } from '../../wailsjs/go/main/App';
-
-const BLANK_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+import { SaveEntry, SetCoverImage } from '../../wailsjs/go/main/App';
 
 export default function EntryForm({ entryToEdit, nextNumber, onSave, onCancel }) {
     const [formData, setFormData] = useState({
-        id: 0, number: nextNumber, title: '', comment: '', rank: '', description: '',
-        image: BLANK_IMAGE_BASE64, backup: null, backupName: ''
+        id: 0, 
+        number: nextNumber, 
+        title: '', 
+        comment: '', 
+        rank: '', 
+        description: ''
     });
 
     useEffect(() => {
         if (entryToEdit) {
-            setFormData({ ...entryToEdit, image: entryToEdit.image || BLANK_IMAGE_BASE64, backup: null });
+            const { image, backup, backupName, ...cleanData } = entryToEdit;
+            setFormData(cleanData);
         }
     }, [entryToEdit]);
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-    
-    const handleImage = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (ev) => setFormData({...formData, image: ev.target.result.split(',')[1]});
-            reader.readAsDataURL(file);
-        }
-    };
 
-    const handleBackup = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (ev) => setFormData({...formData, backup: ev.target.result.split(',')[1], backupName: file.name});
-            reader.readAsDataURL(file);
+    const handleUpdateCover = async () => {
+        if (formData.id) {
+            try {
+                await SetCoverImage(formData.id);
+                // Trigger a re-render of the image by adding a timestamp query
+                setFormData({ ...formData, _t: Date.now() }); 
+            } catch (err) {
+                console.error("Failed to update cover:", err);
+            }
         }
     };
 
     const handleSubmit = () => {
-        if(!formData.title) return alert("Title required");
-        SaveEntry(formData).then(() => onSave()).catch(err => alert(err));
+        if (!formData.title) return alert("Title required");
+        
+        // Pass only the lightweight text data to Go
+        SaveEntry(formData)
+            .then(() => onSave())
+            .catch(err => alert("Error saving entry: " + err));
     };
 
     return (
         <div className="sidebar-form">
             <h2>{entryToEdit ? `Edit #${formData.number}` : "Add New Entry"}</h2>
+            
             <label>Number</label>
             <input type="number" name="number" value={formData.number} onChange={handleChange} />
+            
             <label>Title</label>
             <input name="title" value={formData.title} onChange={handleChange} />
+            
             <label>Comment</label>
             <textarea name="comment" value={formData.comment} onChange={handleChange} />
+            
             <label>Rank</label>
             <input name="rank" value={formData.rank} onChange={handleChange} />
+            
             <label>Description</label>
             <textarea name="description" value={formData.description} onChange={handleChange} rows="4"/>
             
-            <label>Cover Image</label>
-            <img src={`data:image/jpeg;base64,${formData.image}`} className="form-image-preview" />
-            <input type="file" accept="image/*" onChange={handleImage} />
-            
-            <label>Backup File</label>
-            <div className="backup-input-area">
-                <span>{formData.backupName || "No file"}</span>
-                <input type="file" onChange={handleBackup} />
+            <div className="form-media-section">
+                <label>Cover Image</label>
+                {formData.id ? (
+                    <div className="cover-edit-area">
+                        <img 
+                            src={`/images/${formData.id}?t=${formData._t || Date.now()}`} 
+                            className="form-image-preview" 
+                            alt="Cover preview"
+                            onError={(e) => { e.target.src = '/default-cover.png'; }}
+                        />
+                        <button type="button" className="upload-btn" onClick={handleUpdateCover}>
+                            Upload New Cover via OS
+                        </button>
+                    </div>
+                ) : (
+                    <div className="placeholder-note">
+                        <em>Save this entry first to upload a cover image.</em>
+                    </div>
+                )}
+            </div>
+
+            <div className="form-media-section">
+                <label>Media & Backups</label>
+                <div className="placeholder-note">
+                    <em>Use the Series Detail view to add media files and backups.</em>
+                </div>
             </div>
 
             <div className="sidebar-actions">

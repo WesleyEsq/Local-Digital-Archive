@@ -1,22 +1,8 @@
 import { useState, useEffect } from 'react';
 import { 
-    GetMediaGroups, GetMediaAssets, SaveMediaGroup, SaveMediaAsset, 
-    DeleteMediaGroup, DeleteMediaAsset, ExportMediaAsset, UpdateAssetOrder 
+    GetGroupSets, GetFiles, CreateGroupSet, DeleteGroupSet, 
+    DeleteFile, ExportMediaAsset, UpdateFileOrder, ImportFile 
 } from '../../wailsjs/go/main/App';
-
-// Helper: Promisified File Reader
-const readFileAsBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = reader.result;
-            const base64 = result.split(',')[1]; 
-            resolve(base64);
-        };
-        reader.onerror = error => reject(error);
-        reader.readAsDataURL(file);
-    });
-};
 
 export function useSeriesDetail(entryId) {
     const [groups, setGroups] = useState([]);
@@ -33,7 +19,13 @@ export function useSeriesDetail(entryId) {
     }, [entryId]);
 
     const loadGroups = () => {
-        GetMediaGroups(entryId).then(res => setGroups(res || []));
+        GetGroupSets(entryId).then(res => setGroups(res || []));
+    };
+
+    const loadAssets = (groupId) => {
+        GetFiles(groupId).then(res => {
+            setAssets(prev => ({ ...prev, [groupId]: res || [] }));
+        });
     };
 
     const toggleGroup = (groupId) => {
@@ -41,92 +33,79 @@ export function useSeriesDetail(entryId) {
             setExpandedGroupId(null);
         } else {
             setExpandedGroupId(groupId);
-            loadAssets(groupId);
+            // Lazy load assets only when the group is expanded
+            if (!assets[groupId]) {
+                loadAssets(groupId);
+            }
         }
-    };
-
-    const loadAssets = (groupId) => {
-        return GetMediaAssets(groupId).then(res => {
-            const sorted = (res || []).sort((a, b) => a.sort_order - b.sort_order);
-            setAssets(prev => ({ ...prev, [groupId]: sorted }));
-        });
     };
 
     const handleCreateGroup = () => {
-        const title = prompt("New Collection Title (e.g., 'Season 1', 'Volume 1'):");
-        if (!title) return;
-        const sortOrder = groups.length + 1;
-        SaveMediaGroup({ entry_id: entryId, title, category: 'volume', sort_order: sortOrder })
-            .then(loadGroups);
-    };
-
-    const handleDeleteGroup = (id) => {
-        if (confirm("Delete this collection and all its files?")) {
-            DeleteMediaGroup(id).then(loadGroups);
+        const title = prompt("Enter new collection name (e.g., 'Season 1', 'Volume 1'):");
+        if (title) {
+            // "collection" is a generic category string
+            CreateGroupSet(entryId, title, "collection")
+                .then(() => loadGroups())
+                .catch(err => alert("Error creating collection: " + err));
         }
     };
 
-    const handleFileUpload = async (e, groupId) => {
-        const files = Array.from(e.target.files);
-        if (files.length === 0) return;
+    const handleDeleteGroup = (groupId) => {
+        if (confirm("Delete this entire collection and ALL its files? This cannot be undone.")) {
+            DeleteGroupSet(groupId)
+                .then(() => {
+                    loadGroups();
+                    setExpandedGroupId(null);
+                })
+                .catch(err => alert("Error deleting collection: " + err));
+        }
+    };
 
+    // --- THE NEW NATIVE UPLOAD HANDLER ---
+    const handleFileUpload = async (groupId) => {
         setUploadingGroupId(groupId);
-        setUploadProgress(`Preparing ${files.length} files...`);
-        let currentSortOrder = (assets[groupId] || []).length;
-
+        setUploadProgress("Waiting for OS File Picker...");
+        
         try {
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                setUploadProgress(`Importing ${i + 1}/${files.length}: ${file.name}`);
-                const base64 = await readFileAsBase64(file);
-                currentSortOrder++;
-                const assetPayload = {
-                    group_id: groupId,
-                    title: file.name.replace(/\.[^/.]+$/, ""),
-                    filename: file.name,
-                    mime_type: file.type,
-                    sort_order: currentSortOrder
-                };
-                await SaveMediaAsset(assetPayload, base64);
-            }
-            await loadAssets(groupId);
+            // Wails pauses React here, opens the native OS dialog, 
+            // and handles the heavy SQLite transaction securely in Go.
+            await ImportFile(groupId); 
+            loadAssets(groupId); // Refresh the UI list when done
         } catch (err) {
-            console.error(err);
-            alert("Batch upload stopped due to error:\n" + err);
+            alert("Upload failed: " + err);
         } finally {
             setUploadingGroupId(null);
             setUploadProgress("");
-            e.target.value = null;
         }
     };
 
     const handleDragEnd = (result) => {
         if (!result.destination) return;
-        const { source, destination } = result;
-        const groupId = parseInt(result.type.split('-')[1]);
-        
-        const currentAssets = [...assets[groupId]];
-        const [movedItem] = currentAssets.splice(source.index, 1);
-        currentAssets.splice(destination.index, 0, movedItem);
+        const groupId = parseInt(result.source.droppableId.split('-')[1]);
+        const groupAssets = Array.from(assets[groupId]);
+        const [moved] = groupAssets.splice(result.source.index, 1);
+        groupAssets.splice(result.destination.index, 0, moved);
 
-        const updatedAssets = currentAssets.map((asset, index) => ({
+        // Update sorting numbers
+        const updatedAssets = groupAssets.map((asset, index) => ({
             ...asset,
             sort_order: index + 1
         }));
 
         setAssets(prev => ({ ...prev, [groupId]: updatedAssets }));
-        UpdateAssetOrder(updatedAssets).catch(() => loadAssets(groupId));
+        UpdateFileOrder(updatedAssets).catch(() => loadAssets(groupId));
     };
 
     const handleDownload = (asset) => {
+        // Triggers the native OS Save dialog via Go
         ExportMediaAsset(asset.id, asset.filename)
             .then(() => alert("Download Complete!"))
             .catch((err) => alert("Error: " + err));
     };
 
     const handleDeleteAsset = (assetId, groupId) => {
-        if (confirm("Delete this file?")) {
-            DeleteMediaAsset(assetId).then(() => loadAssets(groupId));
+        if (confirm(`Delete this file?`)) {
+            DeleteFile(assetId).then(() => loadAssets(groupId));
         }
     };
 

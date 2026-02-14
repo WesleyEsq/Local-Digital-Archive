@@ -28,22 +28,19 @@ func StartMediaServer(app *App) {
 		// 2. Parse ID (ROBUST VERSION)
 		// We expect: /stream/123  OR  /stream/123/chapter1.mp4
 		path := strings.TrimPrefix(r.URL.Path, "/stream/")
-
-		// Split by slash and take the first part (the ID)
-		// This ignores "/filename.epub" at the end
 		parts := strings.Split(path, "/")
 		idStr := parts[0]
 
-		assetID, err := strconv.Atoi(idStr)
+		fileID, err := strconv.Atoi(idStr)
 		if err != nil {
 			log.Printf("[MediaServer] Invalid ID format: %s", idStr)
 			http.Error(w, "Invalid ID", http.StatusBadRequest)
 			return
 		}
 
-		// 3. Fetch Blob
-		fmt.Printf("[MediaServer] Streaming Asset %d\n", assetID)
-		data, mimeType, err := app.db.FetchAssetBlob(assetID)
+		// 3. Fetch Blob from the new 'objects' table via the 'files' mapping
+		fmt.Printf("[MediaServer] Streaming File ID %d\n", fileID)
+		data, mimeType, err := app.db.FetchFileBlob(fileID)
 		if err != nil {
 			http.Error(w, "Not Found", http.StatusNotFound)
 			return
@@ -52,13 +49,9 @@ func StartMediaServer(app *App) {
 		// 4. Serve Content
 		w.Header().Set("Content-Type", mimeType)
 		reader := bytes.NewReader(data)
-		// We use "file" as a generic name, or you could query the real filename if you wanted perfect "Save As" behavior
-		http.ServeContent(w, r, "file", time.Now(), reader)
+		http.ServeContent(w, r, "", time.Time{}, reader)
 	})
 
-	addr := "127.0.0.1:40001"
-	fmt.Printf("[MediaServer] 🚀 Listening on http://%s\n", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatal("[MediaServer] Failed to start:", err)
-	}
+	log.Println("[MediaServer] Starting on http://localhost:40001")
+	go http.ListenAndServe(":40001", mux)
 }

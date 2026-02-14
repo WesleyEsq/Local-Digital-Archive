@@ -3,297 +3,289 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 
 	_ "modernc.org/sqlite"
 )
+
+// --- Domain Models ---
+
+type Library struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Author      string `json:"author"`
+	Description string `json:"description"`
+}
+
+type Entry struct {
+	ID            int    `json:"id"`
+	LibraryID     int    `json:"library_id"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	Number        string `json:"number"`        // Kept from your old MangaEntry
+	Comment       string `json:"comment"`       // Kept from your old MangaEntry
+	Rank          string `json:"rank"`          // Kept from your old MangaEntry
+	TextAlignment string `json:"textAlignment"` // Kept from your old MangaEntry
+	// NOTE: Image and Backup BLOBs are removed! They will live in the 'objects' table.
+}
+
+type GroupSet struct {
+	ID        int    `json:"id"`
+	EntryID   int    `json:"entry_id"`
+	Title     string `json:"title"`
+	Category  string `json:"category"`
+	SortOrder int    `json:"sort_order"`
+}
+
+type File struct {
+	ID         int    `json:"id"`
+	GroupSetID int    `json:"groupset_id"`
+	Filename   string `json:"filename"`
+	MimeType   string `json:"mime_type"`
+	SizeBytes  int64  `json:"file_size"`
+	SortOrder  int    `json:"sort_order"`
+}
 
 // DB handles all direct database interactions
 type DB struct {
 	conn *sql.DB
 }
 
-// InitDB opens the connection and ensures schema exists
+// InitDB opens the connection and ensures the new schema exists
 func InitDB(path string) (*DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 
-	// IMPORTANT:
+	// 1. Critical performance and relationship Pragmas
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
+	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
 
-	// Initialize standard tables.
+	// 2. Initialize the entire unified schema
 	if err := createTables(db); err != nil {
 		return nil, err
 	}
 
-	// Media table (contains about multimedia blobs)
-	if err := CreateMediaTables(db); err != nil {
-		return nil, err
-	}
-
-	// Yeah I know scalability haha, look at this
-	if err := patchSchema(db); err != nil {
-		return nil, err
-	}
-
-	// Tags table
-	if err := CreateTagTables(db); err != nil {
-		return nil, err
-	}
-
-	// Set WAL mode for better concurrency and performance
-	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-		return nil, err
-	}
 	return &DB{conn: db}, nil
 }
 
 func createTables(db *sql.DB) error {
-	entriesSchema := `
-	CREATE TABLE IF NOT EXISTS entries (
-		id INTEGER NOT NULL PRIMARY KEY,
-		number TEXT NOT NULL,
-		title TEXT,
-		comment TEXT,
-		rank TEXT,
-		description TEXT,
-		image BLOB,
-		backup BLOB,
-		backup_name TEXT,
-		text_alignment TEXT DEFAULT 'center' 
-	);`
-	if _, err := db.Exec(entriesSchema); err != nil {
-		return fmt.Errorf("error creating entries table: %w", err)
+	queries := []string{
+		// 1. Top-Level Libraries
+		`CREATE TABLE IF NOT EXISTS libraries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			type TEXT,
+			author TEXT,
+			description TEXT,
+			cover_image BLOB
+		);`,
+
+		// 2. Generic Entries (No blobs!)
+		`CREATE TABLE IF NOT EXISTS entries (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			library_id INTEGER NOT NULL,
+			title TEXT NOT NULL,
+			description TEXT,
+			number TEXT,
+			comment TEXT,
+			rank TEXT,
+			text_alignment TEXT,
+			FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+		);`,
+
+		// 3. Groupings (Seasons, Volumes, Cover Art group)
+		`CREATE TABLE IF NOT EXISTS group_sets (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entry_id INTEGER NOT NULL,
+			title TEXT,
+			category TEXT,
+			sort_order INTEGER DEFAULT 0,
+			FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+		);`,
+
+		// 4. File Metadata (Lightning fast to query)
+		`CREATE TABLE IF NOT EXISTS files (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			groupset_id INTEGER NOT NULL,
+			filename TEXT,
+			mime_type TEXT,
+			size_bytes INTEGER,
+			sort_order INTEGER DEFAULT 0,
+			FOREIGN KEY(groupset_id) REFERENCES group_sets(id) ON DELETE CASCADE
+		);`,
+
+		// 5. The Pure-SQLite Object Store (1:1 with files)
+		`CREATE TABLE IF NOT EXISTS objects (
+			file_id INTEGER PRIMARY KEY,
+			data BLOB NOT NULL,
+			FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE
+		);`,
+
+		// 6. Tags Definition
+		`CREATE TABLE IF NOT EXISTS tags (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT,
+			icon TEXT
+		);`,
+
+		// 7. Tags to Entries mapping
+		`CREATE TABLE IF NOT EXISTS entry_tags (
+			entry_id INTEGER NOT NULL,
+			tag_id INTEGER NOT NULL,
+			PRIMARY KEY (entry_id, tag_id),
+			FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE,
+			FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+		);`,
 	}
 
-	compendiumSchema := `
-	CREATE TABLE IF NOT EXISTS compendium_data (
-		id INTEGER PRIMARY KEY CHECK (id = 1),
-		title TEXT,
-		author TEXT,
-		description TEXT,
-		image BLOB
-	);`
-	if _, err := db.Exec(compendiumSchema); err != nil {
-		return fmt.Errorf("error creating compendium table: %w", err)
-	}
-
-	var count int
-	_ = db.QueryRow("SELECT COUNT(*) FROM compendium_data WHERE id = 1").Scan(&count)
-	if count == 0 {
-		_, _ = db.Exec("INSERT INTO compendium_data (id, title, author, description) VALUES (?, ?, ?, ?)",
-			1, "My Yuri Collection", "Your Name", "A personal list of all the Girls' Love media I've enjoyed.")
-	}
-
-	return nil
-}
-
-// patchSchema evolves the database structure without losing data
-func patchSchema(db *sql.DB) error {
-	// Check if 'text_alignment' column exists
-	var count int
-	err := db.QueryRow("SELECT count(*) FROM pragma_table_info('entries') WHERE name = 'text_alignment'").Scan(&count)
-	if err != nil {
-		return err
-	}
-
-	// If not, add it safely
-	if count == 0 {
-		_, err = db.Exec("ALTER TABLE entries ADD COLUMN text_alignment TEXT DEFAULT 'center'")
-		if err != nil {
-			return fmt.Errorf("failed to add text_alignment column: %w", err)
+	for _, query := range queries {
+		if _, err := db.Exec(query); err != nil {
+			return fmt.Errorf("failed executing schema query: %w\nQuery: %s", err, query)
 		}
 	}
+
 	return nil
 }
 
-// --- Data Retrieval Methods ---
+// ==========================================
+// LIBRARY QUERIES
+// ==========================================
 
-func (db *DB) FetchEntryList(query string) ([]MangaEntry, error) {
-	sqlStmt := "SELECT id, number, title, comment, rank, description, backup_name, text_alignment FROM entries"
-	args := []interface{}{}
-
-	// Add filter if query exists
-	if query != "" {
-		sqlStmt += " WHERE title LIKE ? OR comment LIKE ?"
-		wildcard := "%" + query + "%"
-		args = append(args, wildcard, wildcard)
-	}
-
-	sqlStmt += " ORDER BY CAST(number AS INTEGER) ASC"
-
-	rows, err := db.conn.Query(sqlStmt, args...)
+func (db *DB) GetLibraries() ([]Library, error) {
+	rows, err := db.conn.Query("SELECT id, name, type FROM libraries ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var entries []MangaEntry
+	var libraries []Library
 	for rows.Next() {
-		var e MangaEntry
-		var description sql.NullString
-		var backupName sql.NullString
-		var align sql.NullString
-
-		if err := rows.Scan(&e.ID, &e.Number, &e.Title, &e.Comment, &e.Rank, &description, &backupName, &align); err != nil {
+		var lib Library
+		if err := rows.Scan(&lib.ID, &lib.Name, &lib.Type); err != nil {
 			return nil, err
 		}
-		e.Description = description.String
-		e.BackupName = backupName.String
-		e.TextAlignment = align.String
-		if e.TextAlignment == "" {
-			e.TextAlignment = "center"
-		}
-		e.Image = []byte{}
-		e.Backup = []byte{}
+		libraries = append(libraries, lib)
+	}
+	return libraries, nil
+}
 
+func (db *DB) CreateLibrary(name, libType string) error {
+	_, err := db.conn.Exec("INSERT INTO libraries (name, type) VALUES (?, ?)", name, libType)
+	return err
+}
+
+// ==========================================
+// ENTRY QUERIES (Lightweight!)
+// ==========================================
+
+func (db *DB) GetEntries(libraryID int) ([]Entry, error) {
+	// Notice how we don't fetch any heavy images here anymore!
+	query := `
+		SELECT id, library_id, title, COALESCE(description, ''), 
+		       COALESCE(number, ''), COALESCE(comment, ''), 
+		       COALESCE(rank, ''), COALESCE(text_alignment, '')
+		FROM entries 
+		WHERE library_id = ?
+		ORDER BY CAST(number AS INTEGER) ASC, title ASC
+	`
+	rows, err := db.conn.Query(query, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []Entry
+	for rows.Next() {
+		var e Entry
+		if err := rows.Scan(&e.ID, &e.LibraryID, &e.Title, &e.Description, &e.Number, &e.Comment, &e.Rank, &e.TextAlignment); err != nil {
+			return nil, err
+		}
 		entries = append(entries, e)
 	}
 	return entries, nil
 }
 
-func (db *DB) FetchEntryImage(id int) ([]byte, error) {
-	var image sql.Null[[]byte]
-	err := db.conn.QueryRow("SELECT image FROM entries WHERE id = ?", id).Scan(&image)
-	if err != nil {
-		return nil, err
-	}
-	if image.Valid {
-		return image.V, nil
-	}
-	return nil, nil
-}
-
-func (db *DB) FetchEntryBackup(id int) ([]byte, string, error) {
-	var backup sql.Null[[]byte]
-	var name sql.NullString
-	err := db.conn.QueryRow("SELECT backup, backup_name FROM entries WHERE id = ?", id).Scan(&backup, &name)
-	if err != nil {
-		return nil, "", err
-	}
-	if backup.Valid {
-		return backup.V, name.String, nil
-	}
-	return nil, "", nil
-}
-
-func (db *DB) FetchCompendiumData() (CompendiumData, error) {
-	var data CompendiumData
-	var image sql.Null[[]byte]
-	err := db.conn.QueryRow("SELECT title, author, description, image FROM compendium_data WHERE id = 1").Scan(
-		&data.Title, &data.Author, &data.Description, &image,
-	)
-	if image.Valid {
-		data.Image = image.V
-	}
-	return data, err
-}
-
-// --- Data Modification Methods ---
-
-func (db *DB) UpdateCompendium(data CompendiumData) error {
-	_, err := db.conn.Exec("UPDATE compendium_data SET title = ?, author = ?, description = ?, image = ? WHERE id = 1",
-		data.Title, data.Author, data.Description, data.Image)
+func (db *DB) DeleteEntry(id int) error {
+	// Since we enabled PRAGMA foreign_keys = ON, deleting this entry
+	// will automatically cascade and delete the GroupSets -> Files -> Objects!
+	_, err := db.conn.Exec("DELETE FROM entries WHERE id = ?", id)
 	return err
 }
 
-func (db *DB) SaveEntry(entry MangaEntry) error {
-	newNum, err := strconv.Atoi(entry.Number)
+// ==========================================
+// GROUP SET QUERIES
+// ==========================================
+
+func (db *DB) GetGroupSets(entryID int) ([]GroupSet, error) {
+	query := `
+		SELECT id, entry_id, COALESCE(title, ''), COALESCE(category, ''), sort_order 
+		FROM group_sets 
+		WHERE entry_id = ? 
+		ORDER BY sort_order ASC
+	`
+	rows, err := db.conn.Query(query, entryID)
 	if err != nil {
-		return fmt.Errorf("invalid number: %v", err)
+		return nil, err
 	}
+	defer rows.Close()
 
-	// Default alignment if missing
-	if entry.TextAlignment == "" {
-		entry.TextAlignment = "center"
+	var groups []GroupSet
+	for rows.Next() {
+		var g GroupSet
+		if err := rows.Scan(&g.ID, &g.EntryID, &g.Title, &g.Category, &g.SortOrder); err != nil {
+			return nil, err
+		}
+		groups = append(groups, g)
 	}
+	return groups, nil
+}
 
-	tx, err := db.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	var oldNum int = -1
-	if entry.ID != 0 {
-		var oldNumStr string
-		err := tx.QueryRow("SELECT number FROM entries WHERE id = ?", entry.ID).Scan(&oldNumStr)
+// CreateEntry inserts a new entry into the database
+func (db *DB) CreateEntry(entry Entry) error {
+	// Calculate the next 'number' to keep your sorting logic intact if none is provided
+	if entry.Number == "" {
+		var nextNum int
+		err := db.conn.QueryRow("SELECT COALESCE(MAX(CAST(number AS INTEGER)), 0) + 1 FROM entries WHERE library_id = ?", entry.LibraryID).Scan(&nextNum)
 		if err == nil {
-			oldNum, _ = strconv.Atoi(oldNumStr)
+			entry.Number = fmt.Sprintf("%d", nextNum)
 		}
 	}
 
-	if newNum != oldNum {
-		_, err = tx.Exec("UPDATE entries SET number = CAST(number AS INTEGER) + 1 WHERE CAST(number AS INTEGER) >= ?", newNum)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Insert or Update - Added text_alignment to queries
-	if entry.ID == 0 {
-		_, err = tx.Exec("INSERT INTO entries (number, title, comment, rank, description, image, backup, backup_name, text_alignment) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			entry.Number, entry.Title, entry.Comment, entry.Rank, entry.Description, entry.Image, entry.Backup, entry.BackupName, entry.TextAlignment)
-	} else {
-		if len(entry.Backup) > 0 && len(entry.Image) > 0 {
-			_, err = tx.Exec("UPDATE entries SET number = ?, title = ?, comment = ?, rank = ?, description = ?, image = ?, backup = ?, backup_name = ?, text_alignment = ? WHERE id = ?",
-				entry.Number, entry.Title, entry.Comment, entry.Rank, entry.Description, entry.Image, entry.Backup, entry.BackupName, entry.TextAlignment, entry.ID)
-		} else if len(entry.Image) > 0 {
-			_, err = tx.Exec("UPDATE entries SET number = ?, title = ?, comment = ?, rank = ?, description = ?, image = ?, backup_name = ?, text_alignment = ? WHERE id = ?",
-				entry.Number, entry.Title, entry.Comment, entry.Rank, entry.Description, entry.Image, entry.BackupName, entry.TextAlignment, entry.ID)
-		} else if len(entry.Backup) > 0 {
-			_, err = tx.Exec("UPDATE entries SET number = ?, title = ?, comment = ?, rank = ?, description = ?, backup = ?, backup_name = ?, text_alignment = ? WHERE id = ?",
-				entry.Number, entry.Title, entry.Comment, entry.Rank, entry.Description, entry.Backup, entry.BackupName, entry.TextAlignment, entry.ID)
-		} else {
-			_, err = tx.Exec("UPDATE entries SET number = ?, title = ?, comment = ?, rank = ?, description = ?, backup_name = ?, text_alignment = ? WHERE id = ?",
-				entry.Number, entry.Title, entry.Comment, entry.Rank, entry.Description, entry.BackupName, entry.TextAlignment, entry.ID)
-		}
-	}
-	if err != nil {
-		return err
-	}
-
-	if oldNum != -1 && newNum > oldNum {
-		_, err = tx.Exec("UPDATE entries SET number = CAST(number AS INTEGER) - 1 WHERE CAST(number AS INTEGER) > ?", oldNum)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
+	query := `
+		INSERT INTO entries (library_id, title, description, number, comment, rank, text_alignment) 
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`
+	_, err := db.conn.Exec(query,
+		entry.LibraryID, entry.Title, entry.Description,
+		entry.Number, entry.Comment, entry.Rank, entry.TextAlignment,
+	)
+	return err
 }
 
-func (db *DB) DeleteEntry(id int) error {
-	var deletedNum int
-	err := db.conn.QueryRow("SELECT number FROM entries WHERE id = ?", id).Scan(&deletedNum)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil
-		}
-		return err
-	}
-
-	tx, err := db.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.Exec("DELETE FROM entries WHERE id = ?", id); err != nil {
-		return err
-	}
-	if _, err := tx.Exec("UPDATE entries SET number = CAST(number AS INTEGER) - 1 WHERE CAST(number AS INTEGER) > ?", deletedNum); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+// UpdateEntry modifies an existing entry
+func (db *DB) UpdateEntry(entry Entry) error {
+	query := `
+		UPDATE entries 
+		SET title = ?, description = ?, number = ?, comment = ?, rank = ?, text_alignment = ?
+		WHERE id = ?
+	`
+	_, err := db.conn.Exec(query,
+		entry.Title, entry.Description, entry.Number,
+		entry.Comment, entry.Rank, entry.TextAlignment,
+		entry.ID,
+	)
+	return err
 }
 
-func (db *DB) UpdateOrder(entries []MangaEntry) error {
+// UpdateEntryOrder processes the drag-and-drop reordering
+func (db *DB) UpdateEntryOrder(entries []Entry) error {
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return err
@@ -306,10 +298,59 @@ func (db *DB) UpdateOrder(entries []MangaEntry) error {
 	}
 	defer stmt.Close()
 
-	for _, entry := range entries {
-		if _, err := stmt.Exec(entry.Number, entry.ID); err != nil {
+	for _, e := range entries {
+		if _, err := stmt.Exec(e.Number, e.ID); err != nil {
 			return err
 		}
 	}
+
 	return tx.Commit()
+}
+
+// ==========================================
+// FILE QUERIES
+// ==========================================
+
+// GetFiles retrieves the lightweight metadata for all files in a specific GroupSet
+func (db *DB) GetFiles(groupsetID int) ([]File, error) {
+	query := `
+		SELECT id, groupset_id, COALESCE(filename, ''), COALESCE(mime_type, ''), size_bytes, sort_order 
+		FROM files 
+		WHERE groupset_id = ? 
+		ORDER BY sort_order ASC, id ASC
+	`
+	rows, err := db.conn.Query(query, groupsetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []File
+	for rows.Next() {
+		var f File
+		if err := rows.Scan(&f.ID, &f.GroupSetID, &f.Filename, &f.MimeType, &f.SizeBytes, &f.SortOrder); err != nil {
+			return nil, err
+		}
+		files = append(files, f)
+	}
+
+	return files, nil
+}
+
+func (db *DB) GetLibrary(id int) (*Library, error) {
+	var lib Library
+	err := db.conn.QueryRow("SELECT id, name, type, COALESCE(author, ''), COALESCE(description, '') FROM libraries WHERE id = ?", id).
+		Scan(&lib.ID, &lib.Name, &lib.Type, &lib.Author, &lib.Description)
+	return &lib, err
+}
+
+func (db *DB) UpdateLibrary(lib Library) error {
+	_, err := db.conn.Exec("UPDATE libraries SET name = ?, author = ?, description = ? WHERE id = ?",
+		lib.Name, lib.Author, lib.Description, lib.ID)
+	return err
+}
+
+func (db *DB) UpdateLibraryCover(id int, data []byte) error {
+	_, err := db.conn.Exec("UPDATE libraries SET cover_image = ? WHERE id = ?", data, id)
+	return err
 }

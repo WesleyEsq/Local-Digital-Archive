@@ -19,6 +19,9 @@ import {
 } from 'lucide-react';
 
 function App() {
+    // Moved inside the component!
+    const [activeLibraryId, setActiveLibraryId] = useState(1); 
+    
     const [view, setView] = useState('list'); 
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [selectedSeries, setSelectedSeries] = useState(null);
@@ -85,17 +88,24 @@ function App() {
 
             {/* --- MAIN CONTENT AREA --- */}
             <main className="content-wrapper">
-                {view === 'about' && <CompendiumView />}
+                {/* Passed libraryId to the views so they know which data to load */}
+                {view === 'about' && <CompendiumView libraryId={activeLibraryId} />}
                 
                 {view === 'list' && (
                     <EntryList 
+                        libraryId={activeLibraryId}
                         isAddingNew={isAddingNew}
                         onAddComplete={() => setIsAddingNew(false)}
-                        onAddNew={() => setIsAddingNew(true)} /* <--- ADD THIS PROP */
+                        onAddNew={() => setIsAddingNew(true)} 
                     />
                 )}
                 
-                {view === 'library' && <LibraryGrid onSelectSeries={handleSelectSeries} />}
+                {view === 'library' && (
+                    <LibraryGrid 
+                        libraryId={activeLibraryId} 
+                        onSelectSeries={handleSelectSeries} 
+                    />
+                )}
                 
                 {view === 'series_detail' && selectedSeries && (
                     <SeriesDetail 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { GetEntries, UpdateOrder, DeleteEntry, GetEntryImage, DownloadBackup, ImportLegacyCSV } from '../../wailsjs/go/main/App';
+import { GetEntries, UpdateOrder, DeleteEntry, GetEntryImage, DownloadBackup} from '../../wailsjs/go/main/App';
 
 const BLANK_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
@@ -55,16 +55,12 @@ export default function EntryList({ onEdit, refreshTrigger }) {
         }
     };
     
-    const handleImport = () => {
-        ImportLegacyCSV().then(() => refreshEntries());
-    }
 
     if (entries.length === 0) {
          return (
             <div className="main-content">
                 <div className="empty-db-prompt">
                     <h3>Compendium is empty.</h3>
-                    <button className="import-button" onClick={handleImport}>Import CSV</button>
                 </div>
             </div>
          )

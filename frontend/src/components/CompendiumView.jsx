@@ -1,39 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { GetCompendiumData, UpdateCompendiumData } from '../../wailsjs/go/main/App';
+import { GetLibrary, UpdateLibrary, SetLibraryCover } from '../../wailsjs/go/main/App';
 
-const BLANK_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
-
-export default function CompendiumView() {
+export default function CompendiumView({ libraryId }) {
     const [data, setData] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({});
 
     useEffect(() => {
-        refreshData();
-    }, []);
+        if (libraryId) refreshData();
+    }, [libraryId]);
 
     const refreshData = () => {
-        GetCompendiumData().then(result => {
+        GetLibrary(libraryId).then(result => {
             setData(result);
             setFormData(result);
-        });
+        }).catch(console.error);
     };
 
     const handleSave = () => {
-        UpdateCompendiumData(formData).then(() => {
+        UpdateLibrary(formData).then(() => {
             refreshData();
             setIsEditing(false);
-        });
+        }).catch(err => alert("Failed to save: " + err));
     };
 
-    const handleImageChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            setFormData({ ...formData, image: ev.target.result.split(',')[1] });
-        };
-        reader.readAsDataURL(file);
+    // Replaces the old FileReader with the native Wails OS dialog
+    const handleUpdateCover = async () => {
+        try {
+            await SetLibraryCover(libraryId);
+            // Add a timestamp to the state to force the <img> tag to bypass the browser cache
+            setFormData(prev => ({ ...prev, _t: Date.now() })); 
+        } catch (err) {
+            console.error("Failed to update cover:", err);
+        }
     };
 
     if (!data) return <div className="loading-state">Loading...</div>;
@@ -43,17 +42,19 @@ export default function CompendiumView() {
             <div className="about-card">
                 <div className="about-image-section">
                     <img 
-                        src={`data:image/jpeg;base64,${data.image || BLANK_IMAGE_BASE64}`} 
-                        alt={data.title} 
+                        src={`/images/library/${libraryId}?t=${formData._t || Date.now()}`} 
+                        alt={data.name} 
                         className="about-cover-image" 
+                        onError={(e) => { e.target.src = '/default-cover.png'; }}
                     />
                 </div>
                 
                 <div className="about-info-section">
                     <div className="about-header">
                         <div>
-                            <h1>{data.title}</h1>
-                            <h3>by {data.author}</h3>
+                            {/* Note: struct field is Name, not Title */}
+                            <h1>{data.name}</h1>
+                            <h3>by {data.author || "Unknown"}</h3>
                         </div>
                         <button className="edit-icon-btn" onClick={() => setIsEditing(true)} title="Edit Details">
                             ✎
@@ -61,7 +62,7 @@ export default function CompendiumView() {
                     </div>
                     <hr className="divider"/>
                     <p className="about-description" style={{ textAlign: 'justify' }}>
-                        {data.description}
+                        {data.description || "No description provided."}
                     </p>
                 </div>
             </div>
@@ -80,12 +81,16 @@ export default function CompendiumView() {
                             <div className="pro-modal-image-col">
                                 <label>Cover Art</label>
                                 <div className="image-preview-wrapper">
-                                    <img src={`data:image/jpeg;base64,${formData.image}`} alt="Preview" />
+                                    <img 
+                                        src={`/images/library/${libraryId}?t=${formData._t || Date.now()}`} 
+                                        alt="Preview" 
+                                        onError={(e) => { e.target.src = '/default-cover.png'; }}
+                                    />
                                     <div className="image-overlay-actions">
-                                        <label className="upload-btn">
-                                            Change Image
-                                            <input type="file" onChange={handleImageChange} hidden />
-                                        </label>
+                                        {/* Swapped label/input for a direct Wails button */}
+                                        <button className="upload-btn" onClick={handleUpdateCover} style={{cursor: 'pointer'}}>
+                                            Change Image (OS)
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -93,17 +98,17 @@ export default function CompendiumView() {
                             {/* RIGHT COLUMN: FORM */}
                             <div className="pro-modal-form-col">
                                 <div className="form-group">
-                                    <label>Title</label>
+                                    <label>Library Name</label>
                                     <input 
-                                        value={formData.title} 
-                                        onChange={e => setFormData({...formData, title: e.target.value})} 
+                                        value={formData.name || ""} 
+                                        onChange={e => setFormData({...formData, name: e.target.value})} 
                                         className="pro-input large"
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label>Author / Circle</label>
+                                    <label>Author / Curator</label>
                                     <input 
-                                        value={formData.author} 
+                                        value={formData.author || ""} 
                                         onChange={e => setFormData({...formData, author: e.target.value})} 
                                         className="pro-input"
                                     />
@@ -111,7 +116,7 @@ export default function CompendiumView() {
                                 <div className="form-group">
                                     <label>Description</label>
                                     <textarea 
-                                        value={formData.description} 
+                                        value={formData.description || ""} 
                                         onChange={e => setFormData({...formData, description: e.target.value})} 
                                         className="pro-input"
                                         rows="8"

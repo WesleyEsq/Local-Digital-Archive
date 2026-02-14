@@ -33,10 +33,13 @@ export default function SeriesDetail({ entry, onBack }) {
                 <div className="hero-content">
                     {/* FIXED IMAGE SOURCE: Now using the high-speed handler */}
                     <img 
-                        src={`/images/${entry.id}`} 
+                        src={`/images/${entry.id}?t=${Date.now()}`} 
                         className="hero-poster" 
                         alt={entry.title} 
-                        onError={(e) => e.target.style.display = 'none'} // Hide if broken
+                        onError={(e) => {
+                            e.target.src = '/default-cover.png'; 
+                            e.target.style.opacity = '0.5';
+                        }} 
                     />
                     
                     <div className="hero-info">
@@ -139,7 +142,7 @@ export default function SeriesDetail({ entry, onBack }) {
 
                                                             {/* INFO */}
                                                             <div className="track-info">
-                                                                <div className="track-title">{asset.title}</div>
+                                                                <div className="track-title">{asset.title || asset.filename}</div>
                                                                 <div className="track-filename">{asset.filename}</div>
                                                             </div>
                                                             
@@ -183,20 +186,23 @@ export default function SeriesDetail({ entry, onBack }) {
                                             ))}
                                             {provided.placeholder}
 
-                                            {/* UPLOAD AREA */}
+                                            {/* --- THE NEW OS UPLOAD BUTTON --- */}
                                             {uploadingGroupId === group.id ? (
-                                                <div className="asset-upload-row loading">
-                                                    <div className="upload-spinner"></div>
+                                                <div className="asset-upload-row loading" style={{ display: 'flex', justifyContent: 'center', padding: '15px' }}>
+                                                    <div className="upload-spinner" style={{ marginRight: '10px' }}></div>
                                                     <span className="upload-text">
-                                                        {uploadProgress || "Importing Media..."}
+                                                        {uploadProgress}
                                                     </span>
                                                 </div>
                                             ) : (
-                                                <label className="asset-upload-row">
-                                                    <Plus size={20} />
-                                                    <span>Add Files to {group.title}</span>
-                                                    <input type="file" multiple onChange={(e) => handleFileUpload(e, group.id)} hidden />
-                                                </label>
+                                                <button 
+                                                    className="asset-upload-row" 
+                                                    onClick={() => handleFileUpload(group.id)}
+                                                    style={{ width: '100%', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '15px' }}
+                                                >
+                                                    <Plus size={20} style={{ marginRight: '8px' }} />
+                                                    <span>Add File to {group.title} via OS</span>
+                                                </button>
                                             )}
                                         </div>
                                     )}

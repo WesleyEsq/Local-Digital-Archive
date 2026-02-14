@@ -1,78 +1,54 @@
 export namespace main {
 	
-	export class CompendiumData {
-	    title: string;
-	    author: string;
-	    description: string;
-	    image: number[];
-	
-	    static createFrom(source: any = {}) {
-	        return new CompendiumData(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.title = source["title"];
-	        this.author = source["author"];
-	        this.description = source["description"];
-	        this.image = source["image"];
-	    }
-	}
-	export class MangaEntry {
+	export class Entry {
 	    id: number;
-	    number: string;
+	    library_id: number;
 	    title: string;
+	    description: string;
+	    number: string;
 	    comment: string;
 	    rank: string;
-	    image: number[];
-	    description: string;
-	    backup: number[];
-	    backupName: string;
 	    textAlignment: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new MangaEntry(source);
+	        return new Entry(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.number = source["number"];
+	        this.library_id = source["library_id"];
 	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.number = source["number"];
 	        this.comment = source["comment"];
 	        this.rank = source["rank"];
-	        this.image = source["image"];
-	        this.description = source["description"];
-	        this.backup = source["backup"];
-	        this.backupName = source["backupName"];
 	        this.textAlignment = source["textAlignment"];
 	    }
 	}
-	export class MediaAsset {
+	export class File {
 	    id: number;
-	    group_id: number;
-	    title: string;
+	    groupset_id: number;
 	    filename: string;
 	    mime_type: string;
 	    file_size: number;
 	    sort_order: number;
 	
 	    static createFrom(source: any = {}) {
-	        return new MediaAsset(source);
+	        return new File(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.group_id = source["group_id"];
-	        this.title = source["title"];
+	        this.groupset_id = source["groupset_id"];
 	        this.filename = source["filename"];
 	        this.mime_type = source["mime_type"];
 	        this.file_size = source["file_size"];
 	        this.sort_order = source["sort_order"];
 	    }
 	}
-	export class MediaGroup {
+	export class GroupSet {
 	    id: number;
 	    entry_id: number;
 	    title: string;
@@ -80,7 +56,7 @@ export namespace main {
 	    sort_order: number;
 	
 	    static createFrom(source: any = {}) {
-	        return new MediaGroup(source);
+	        return new GroupSet(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -90,6 +66,26 @@ export namespace main {
 	        this.title = source["title"];
 	        this.category = source["category"];
 	        this.sort_order = source["sort_order"];
+	    }
+	}
+	export class Library {
+	    id: number;
+	    name: string;
+	    type: string;
+	    author: string;
+	    description: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Library(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.author = source["author"];
+	        this.description = source["description"];
 	    }
 	}
 	export class Tag {

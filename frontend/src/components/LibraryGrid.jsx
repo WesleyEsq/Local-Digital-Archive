@@ -3,7 +3,8 @@ import { GetEntries } from '../../wailsjs/go/main/App';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Virtuoso, VirtuosoGrid } from 'react-virtuoso';
 
-export default function LibraryGrid({ onSelectSeries }) {
+// ADDED libraryId prop here
+export default function LibraryGrid({ libraryId, onSelectSeries }) {
     const [allEntries, setAllEntries] = useState([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [sortBy, setSortBy] = useState("number");
@@ -14,23 +15,28 @@ export default function LibraryGrid({ onSelectSeries }) {
     // 2. FIX ANIMATION: Keep track of images that have already loaded once
     const loadedCache = useRef(new Set());
 
-    // --- Fetch & Sort Logic (Unchanged) ---
+    // --- Fetch & Sort Logic ---
     useEffect(() => {
-        GetEntries("").then(res => setAllEntries(res || []));
-    }, []);
+        // NOW PASSING THE INTEGER ID INSTEAD OF AN EMPTY STRING
+        if (libraryId) {
+            GetEntries(libraryId)
+                .then(res => setAllEntries(res || []))
+                .catch(err => console.error("Error fetching entries:", err));
+        }
+    }, [libraryId]);
 
     const filteredEntries = useMemo(() => {
         let result = allEntries;
         if (searchQuery) {
             const lowerQ = searchQuery.toLowerCase();
             result = result.filter(e => 
-                e.title.toLowerCase().includes(lowerQ) || 
-                e.comment.toLowerCase().includes(lowerQ)
+                (e.title && e.title.toLowerCase().includes(lowerQ)) || 
+                (e.comment && e.comment.toLowerCase().includes(lowerQ))
             );
         }
         switch (sortBy) {
-            case 'rank': result = [...result].sort((a, b) => a.rank.localeCompare(b.rank)); break;
-            case 'title': result = [...result].sort((a, b) => a.title.localeCompare(b.title)); break;
+            case 'rank': result = [...result].sort((a, b) => (a.rank || "").localeCompare(b.rank || "")); break;
+            case 'title': result = [...result].sort((a, b) => (a.title || "").localeCompare(b.title || "")); break;
             default: result = [...result].sort((a, b) => Number(a.number) - Number(b.number));
         }
         return result;
@@ -63,7 +69,7 @@ export default function LibraryGrid({ onSelectSeries }) {
                         }}
                     />
                     <div className="library-card-overlay">
-                        <span className={`rank-badge rank-${entry.rank.charAt(0)}`}>{entry.rank}</span>
+                        <span className={`rank-badge rank-${entry.rank ? entry.rank.charAt(0) : 'U'}`}>{entry.rank}</span>
                     </div>
                 </div>
                 <div className="library-card-title">{entry.title}</div>
