@@ -11,7 +11,7 @@ export function CreateTag(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function DeleteEntry(arg1:number):Promise<void>;
 
-export function DeleteFile(arg1:number):Promise<void>;
+export function DeleteFile(arg1:number,arg2:number):Promise<void>;
 
 export function DeleteGroupSet(arg1:number):Promise<void>;
 
@@ -44,6 +44,8 @@ export function SaveEntry(arg1:main.Entry):Promise<void>;
 export function SetCoverImage(arg1:number):Promise<void>;
 
 export function SetLibraryCover(arg1:number):Promise<void>;
+
+export function StreamHandler(arg1:http.ResponseWriter,arg2:http.Request):Promise<void>;
 
 export function UpdateEntryTags(arg1:number,arg2:Array<number>):Promise<void>;
 

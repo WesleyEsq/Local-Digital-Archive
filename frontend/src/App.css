@@ -19,8 +19,11 @@
 @import './styles/tags.css';
 
 
-/* --- SIDEBAR LAYOUT --- */
 
+
+
+/* --- SIDEBAR LAYOUT --- */
+/* I REALLY should refactor this into it's own file that gets imported. Messes up the global style I made... */
 #App {
     /* Change main container to Row direction */
     display: flex;

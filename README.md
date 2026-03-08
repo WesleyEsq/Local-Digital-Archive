@@ -1,10 +1,45 @@
-# GoGL Compendium: Tu Archivo Digital Personal
+# Compendium | Prototipo de sistema de almacenamiento con enfasís en metadatos.
 
-¡Bienvenido!
+### ¡Te doy la bienvenida!
 
-Este proyecto nace de la necesidad de ir más allá de las simples hojas de cálculo y los marcadores del navegador. Es una aplicación de escritorio robusta, diseñada para ser un "santuario digital" para tu colección personal de medios (Manga, Anime, Novelas Ligeras y más). Es un Archivo digital para la preservación de archivos multimedia.
+El proposito de este proyecto es el desarrollar un Archivero digital completamente local, para la preservación y organización automática de archivos multimedia.
 
-Construido sobre la potencia de **Go** y la flexibilidad de **React**, GoGL combina la velocidad de una base de datos local con una interfaz moderna estilo "streaming". En base a una lista, es una estantería digital viva diseñada para la preservación, la portabilidad y la estética.
+El proyecto esta diseñado para la preservación personal de tanto los archivos como de una gran cantidad de metadatos acerca de ellos. Se basa en la organización de gigantes como Youtube, S3 y Google Drive, solo que completamente de manera local y compacta.
+
+---
+## Soporte para la visualización de archivos.
+
+| Medio     |Formatos que pueden ser visualizados| Futuras agregaciones     |
+| ---       |---                                 | ---                      |
+| Audio     |                                    | wav, mp3, AIFF, AAC, OGG |
+| Imagenes  | PNG, JPEG, WebP, GIF, TIFF         | SVG                      |
+| Videos    | MP4, WebM                          |                          |
+| Documentos| PDF, Epub                          | Docx, HTML               |
+| Ebooks    | Epub                               | Secuencias de Imagenes   |
+
+Cualquier otro formato de archivos puede ser almacenado y descargado en el sistema, pero solo se provee soporte para visualizar estos archivos con la interfaz.
+
+---
+## Acerca de compendium.
+Este proyecto nace de la necesidad de ir más allá de las simples hojas de cálculo y los marcadores del navegador. Es una aplicación de escritorio robusta, diseñada para ser un "santuario digital" para tu colección personal de medios (Libros, Trabajos de artistas, Series, Novelas Ligeras y más).
+
+Construido sobre la potencia de Go y la flexibilidad de React, este prototipo combina la velocidad de una base de datos embebida con una interfaz moderna estilo "streaming" mediante streaming. Es una estantería digital viva diseñada para la preservación, la portabilidad y la estética.
+
+Los elementos multimedia y los metadatos acerca de ellos son organizados de manera automática en una estructura jerarquica, para facilitar la recolección e integridad de los mismos a gran escala.
+
+---
+
+## Metas de este proyecto.
+Se espera continuar con este prototipo con la implementación de las siguientes metas, para permitir un uso práctico del almacenamiento que provee:
+
+**Metas**
+1. Compatibilidad con almacenamiento personal en la nube de Google Drive y OneDrive
+2. Almacenamientode backups mediante S3
+3. Mejor operabilidad con el sistema operativo para observar multimedia fuera de la aplicación de react con las siguientes herramientas:
+    - Adobe Acrobat
+    - VLC
+4. Funcionalidad para exportar todos los datos de la base de datos en un directorio de manera jerarquica como en el sistema.
+5. Sistema robusto de backups.
 
 ---
 
@@ -42,11 +77,14 @@ El proyecto sigue la arquitectura estándar de **Wails**, separando claramente l
 
 El propósito de GoGL Compendium es resolver el problema de la **preservación digital** con una experiencia de usuario superior.
 
+El proyecto mantiene como su principal meta a la **compactabilidad**, proveyendo una solución altamente escalable sin la necesidad de contenedores, servidores de bases de datos, pods u servicios por parte de terceros, siendo una alternativa segura para un usuario.
+
+
 ### 1. Preservación Local ("Local-First")
 
 En la era digital, el contenido en la nube es efímero. Series favoritas pueden desaparecer por licencias o cierres de sitios web. GoGL apuesta por el almacenamiento local:
 
-* **Base de Datos como Sistema de Archivos:** A diferencia de los gestores tradicionales que solo guardan rutas de archivos, GoGL (opcionalmente) ingesta los archivos (PDF, EPUB, Imágenes) directamente en la base de datos SQLite.
+* **Base de Datos como Sistema de Archivos:** A diferencia de los gestores tradicionales que solo guardan rutas de archivos, se ingestan los archivos (PDF, EPUB, Imágenes) directamente en la base de datos SQLite.
 * **Portabilidad Total:** Al residir todo en un único archivo `.db`, hacer una copia de seguridad de tu biblioteca entera es tan simple como copiar un archivo.
 
 ### 2. Estética y Funcionalidad
@@ -59,13 +97,14 @@ Las hojas de cálculo son eficientes, pero aburridas. GoGL busca emular la exper
 
 ### 3. Privacidad y Ética
 
-Este es un software de **uso estrictamente personal**. No se conecta a servidores externos para descargar contenido ilegal ni comparte datos. Es una herramienta pasiva para organizar lo que el usuario ya posee, actuando como una bóveda digital privada y segura.
+Este es un software de **uso estrictamente personal** para la organización de archivos locales. No se conecta a ninguna red ni comparte sus datos con otros usuarios. Es una herramienta pasiva para organizar lo que el usuario ya posee, actuando como una estanteria digital personal y segura. 
+
+Por lo que se han tomado decisiones para garantizar una mejor experiencia local en una máquina, a coste de una arquitectura hostíl contra el streaming de los datos a otros dispositivos.
 
 ---
+# Arquitectura y Especificaciones Técnicas
 
-# ⚙️ Arquitectura y Especificaciones Técnicas
-
-GoGL Compendium no es un simple wrapper web; es una aplicación híbrida de alto rendimiento. Esta sección detalla las decisiones de ingeniería, el esquema de datos y los patrones de diseño utilizados para lograr una experiencia fluida manejando archivos multimedia pesados.
+Compendium es una aplicación híbrida de alto rendimiento. Esta sección detalla las decisiones de ingeniería, el esquema de datos y los patrones de diseño utilizados para lograr una experiencia fluida manejando archivos multimedia pesados.
 
 ## 1. Stack Tecnológico
 
@@ -83,38 +122,16 @@ La elección de tecnologías prioriza tres pilares: **Portabilidad** (un solo bi
 
 ## 2. Diseño de Base de Datos (Schema)
 
-El corazón de GoGL es su base de datos **SQLite monolítica**. A diferencia de aplicaciones tradicionales que guardan rutas de archivos (`C:/Users/...`), GoGL almacena los archivos binarios (Imágenes, PDFs, EPUBs) directamente dentro de la base de datos como **BLOBS**.
+El corazón del proyecto es su base de datos **SQLite**. A diferencia de aplicaciones tradicionales que guardan rutas de archivos (`C:/Users/...`), Compendium almacena los archivos binarios (Imágenes, PDFs, EPUBs) directamente dentro de la base de datos como **BLOBS**.
 
 ### Estrategia de "Todo en Uno"
 
 * **Ventaja:** Portabilidad absoluta. Mover tu colección a otra PC implica copiar un solo archivo `.db`.
-* **Desafío:** El rendimiento de lectura.
-* **Solución:** Implementación de **Lazy Loading** (ver sección 4).
-
-### Esquema Relacional
-
-El modelo de datos utiliza una jerarquía estricta con **Integridad Referencial en Cascada** (`ON DELETE CASCADE`).
-
-1. **Tabla `entries` (La Serie)**
-* Metadatos de alto nivel: *Título, Autor, Ranking, Descripción (Markdown), Portada*.
-* Define el orden manual del usuario mediante la columna `number`.
+* **Desafío:** El rendimiento de lectura es inferior al uso del sistema de archivos para el almacenamiento de blobs mayores 100Kb.
+* **Solución:** Implementación de un servidor sidecar en Go para la lectura y obtención  de objetos multimedia en la base de datos. Funcionando de manera muy simil a los servicios de S3.
 
 
-2. **Tabla `media_groups` (El Contenedor)**
-* Agrupación lógica. Representa *Temporadas* (Anime) o *Volúmenes* (Manga).
-* `Foreign Key` -> `entries.id`.
-
-
-3. **Tabla `media_assets` (El Archivo)**
-* Contiene el archivo real.
-* Columnas críticas: `mime_type` (detecta si es PDF/Video), `file_blob` (el binario), `file_size`.
-* `Foreign Key` -> `media_groups.id`.
-
-
-
----
-
-## 3. El Puente Wails (Interoperabilidad)
+## 3. Wails y la relación entre Go y React
 
 La comunicación entre Go y JavaScript es asíncrona y segura, gestionada a través de `wailsjs`.
 
@@ -127,40 +144,13 @@ La comunicación entre Go y JavaScript es asíncrona y segura, gestionada a trav
 
 ---
 
-## 4. Algoritmos y Optimizaciones Clave
+## 4. Modularidad del Frontend
 
-Para manejar bases de datos que pueden crecer a Gigabytes de tamaño, implementamos varias optimizaciones críticas:
-
-### A. Patrón de Carga Diferida (Lazy Loading)
-
-Un error común es hacer `SELECT *` trayendo imágenes pesadas. GoGL separa la consulta en dos fases:
-
-1. **Fase Ligera:** `GetEntries()` recupera solo texto (ID, Título, Rank). La carga inicial es < 50ms.
-2. **Fase Bajo Demanda:** Las imágenes de portada solo se solicitan (`GetEntryImage(id)`) cuando el componente entra en el "Viewport" del usuario, utilizando la API `IntersectionObserver` de JavaScript.
-
-### B. Paginación Virtualizada (El "Magic Number 14")
-
-En la vista de Galería (`LibraryGrid`), no renderizamos toda la colección.
-
-* Se implementó una paginación estricta de **14 elementos por página**.
-* Este número está optimizado para pantallas 1080p (cuadrícula 7x2), manteniendo el DOM ligero y la memoria de la GPU baja.
-
-### C. Streaming de Activos (Planificación Phase 3)
-
-Actualmente, los archivos se pasan como cadenas Base64. Para archivos grandes (>50MB), la arquitectura está preparada para transicionar al uso de `AssetServer` de Wails, lo que permitirá:
-
-* Hacer streaming de video (byte-range requests).
-* Evitar cargar el archivo entero en la RAM de Go.
-
----
-
-## 5. Modularidad del Frontend
-
-El código React ha sido refactorizado para evitar la deuda técnica del "CSS Gigante".
+El código React demanda una gran especialización en cuanto a los estilos de cada componente, se organizan según cada elemento reutilizable en la estructura del proyecto. Pueden compartir estilos entre sí o usar un estilo global definido para todo el proyecto. Para el proposito de este proyecto se tiene la siguiente dispocisión de los elementos de UI:
 
 * **CSS Modular:** Los estilos se dividen por responsabilidad (`layout.css`, `library.css`, `modals.css`).
 * **Componentes Atómicos:** `LibraryGrid`, `SeriesDetail` y `EntryList` funcionan de manera aislada, recibiendo datos solo a través de *props*, facilitando el testing y la depuración.
 
 ---
 
-Esta documentación técnica establece la seriedad del proyecto. No es solo un script; es una pieza de ingeniería de software diseñada para escalar y perdurar.
+Esta documentación técnica requiere ser expandida para futuras iteraciones de este prototipo.
